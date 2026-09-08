@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.translate.AudioPlayer
+import org.bolmitra.translate.IndicTrans2MtEngine
 import org.bolmitra.translate.PhrasebookEngine
 import org.bolmitra.translate.TurnOrchestrator
 import org.bolmitra.translate.TurnOutcome
@@ -73,6 +74,15 @@ class LiveTurnEngine private constructor(
     private var player: RenderingAudioPlayer? = null
     private var orchestrator: TurnOrchestrator? = null
 
+    /**
+     * T1 machine translation, or null where no model exists for this language.
+     *
+     * Held alongside the other engines because it is the largest of them: ~406 MB of native memory
+     * for the fused int8 graphs. The per-language instance map in the companion object is what
+     * keeps that from being paid twice.
+     */
+    private var mt: IndicTrans2MtEngine? = null
+
     private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(DemoSeed.phrases)
 
     /** Resolves a pack ref back to the phrase text, for [RenderingAudioPlayer]. */
@@ -107,6 +117,9 @@ class LiveTurnEngine private constructor(
         val missing = buildList {
             if (!store.hasBatchAsr()) add("Hindi ASR (asr-batch/)")
             if (!store.hasTts(language)) add("${language.englishName} voice (${language.voiceDir}/)")
+            // Not listed as missing when absent: T1 is optional by design (§4.5) and T0 alone
+            // satisfies every stated requirement, so a language without an MT model must still
+            // load and run its phrasebook rather than refusing to start.
         }
         if (missing.isNotEmpty()) {
             val state = LoadState.Missing(
@@ -118,15 +131,11 @@ class LiveTurnEngine private constructor(
         }
 
         val state = try {
-            val a = asr ?: SherpaBatchAsr(
-                modelPath = store.asrBatchModel.absolutePath,
-                tokensPath = store.asrBatchTokens.absolutePath,
-            ).also { asr = it }
-
-            val t = tts ?: SherpaMundariTts(
-                modelPath = store.ttsModel(language).absolutePath,
-                tokensPath = store.ttsTokens(language).absolutePath,
-            ).also { tts = it }
+            // Shared across languages, not per-instance. See the companion object: the Hindi ASR is
+            // identical whatever the target, and Santali is spoken by Mundari's voice, so keying
+            // these per language loaded the same files twice.
+            val a = asr ?: sharedAsr(store).also { asr = it }
+            val t = tts ?: sharedTts(store, language).also { tts = it }
 
             val p = player ?: RenderingAudioPlayer(
                 tts = t,
@@ -134,16 +143,19 @@ class LiveTurnEngine private constructor(
                 textForRef = textForRef,
             ).also { player = it }
 
+            // Real T1 where a model exists, null where none does — which is still most languages.
+            // Mundari and Ho are absent from IndicTrans2 and NLLB-200 because they are not
+            // scheduled languages, so for them this stays null and a T0 miss correctly reports
+            // NO_TRANSLATION_AVAILABLE. loadOrNull also returns null when the pack simply has not
+            // been sideloaded yet, which must degrade to the phrasebook rather than fail the load.
+            val m = mt ?: sharedMt(store, language)?.also { mt = it }
+            Log.i(TAG, "T1 for ${language.englishName}: ${if (m != null) "loaded" else "none"}")
+
             orchestrator = TurnOrchestrator(
                 phrasebook = phrasebook,
                 tts = t,
                 player = p,
-                // Null on purpose. §4.5: T1 is optional and T0 alone satisfies every stated
-                // requirement, and the only MtEngine in the tree is EchoMtEngine, which returns
-                // "[MT-लंबित] $input". Passing it would make a T0 miss speak the Hindi back with a
-                // tag on it, which sounds like a translation and is not one. With null, a miss
-                // reports NO_TRANSLATION_AVAILABLE, which is true.
-                mt = null,
+                mt = m,
                 nowMs = SystemClock::elapsedRealtime,
             )
             LoadState.Ready
@@ -223,6 +235,60 @@ class LiveTurnEngine private constructor(
          * is acceptable. At that point it becomes keep-one-plus-previous, not a general cache.
          */
         private val instances = HashMap<TargetLanguage, LiveTurnEngine>()
+
+        // ---- shared model caches -------------------------------------------------------------
+        //
+        // The `ponytail:` ceiling noted above arrived sooner than expected, and measurably. With
+        // Mundari and Santali both selected the process reached **2.03 GB PSS with 582 MB swapped**,
+        // because a per-language engine loaded its own copy of everything. Two of the three models
+        // are not per-language at all:
+        //
+        //   * The Hindi ASR is the SOURCE side. It is identical for every target language, so there
+        //     is never a reason to hold two.
+        //   * A voice belongs to a DIRECTORY, not a language. Santali is Support.BORROWED and points
+        //     at tts-unr, so Mundari and Santali are the same 109 MB model — loaded twice.
+        //
+        // Keying the caches on what the model actually depends on, rather than on the language that
+        // asked for it, means switching target language now costs only the MT model.
+        //
+        // Guarded by `instances` for want of a second lock: every path here is already reached from
+        // the synchronized `get` or from `ensureLoaded`, and contention is a user tapping a picker.
+        private var asrShared: SherpaBatchAsr? = null
+        private val ttsShared = HashMap<String, SherpaMundariTts>()
+        private val mtShared = HashMap<String, IndicTrans2MtEngine>()
+
+        private fun sharedAsr(store: ModelStore): SherpaBatchAsr = synchronized(instances) {
+            asrShared ?: SherpaBatchAsr(
+                modelPath = store.asrBatchModel.absolutePath,
+                tokensPath = store.asrBatchTokens.absolutePath,
+            ).also { asrShared = it }
+        }
+
+        private fun sharedTts(store: ModelStore, language: TargetLanguage): SherpaMundariTts =
+            synchronized(instances) {
+                ttsShared.getOrPut(language.voiceDir) {
+                    SherpaMundariTts(
+                        modelPath = store.ttsModel(language).absolutePath,
+                        tokensPath = store.ttsTokens(language).absolutePath,
+                    )
+                }
+            }
+
+        /**
+         * MT for a language, or null where no model exists — still the common case, since Mundari
+         * and Ho are absent from IndicTrans2 and NLLB-200 for not being scheduled languages.
+         *
+         * Keyed on [TargetLanguage.mtDir] because a checkpoint can serve more than one pair: this
+         * is IndicTrans2's indic→indic model, and a second Munda language added later would share
+         * the same 406 MB rather than double it.
+         */
+        private fun sharedMt(store: ModelStore, language: TargetLanguage): IndicTrans2MtEngine? {
+            val dir = language.mtDir ?: return null
+            return synchronized(instances) {
+                mtShared[dir] ?: IndicTrans2MtEngine.loadOrNull(store, language)
+                    ?.also { mtShared[dir] = it }
+            }
+        }
 
         /** Process-scoped. See the class docs on O17. */
         fun get(

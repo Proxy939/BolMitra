@@ -164,7 +164,15 @@ class TurnOrchestrator(
             return TurnOutcome.TextOnly(translated.targetTextDeva, DegradeReason.BUDGET_EXHAUSTED)
         }
 
-        val clip = tts.synthesizeUtterance(translated.targetTextNative)
+        // Synthesis takes the DEVANAGARI form, not the native one.
+        //
+        // The TTS stage is Devanagari-in by construction: the voice is trained on Odia orthography
+        // and SherpaMundariTts runs DevanagariToOdia itself (V63). For Mundari the two fields hold
+        // the same string, so this is invisible. For Santali it is the whole difference between
+        // speech and silence — targetTextNative is Ol Chiki, and DevanagariToOdia has no mapping
+        // for a single Ol Chiki character, so it would drop the entire utterance and synthesise
+        // nothing. targetTextNative stays the field the class SEES; this is the field it HEARS.
+        val clip = tts.synthesizeUtterance(translated.targetTextDeva)
             ?: return TurnOutcome.TextOnly(
                 translated.targetTextDeva,
                 DegradeReason.SYNTHESIS_FAILED,

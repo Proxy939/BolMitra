@@ -998,6 +998,17 @@ private fun LivePane(wide: Boolean, micGranted: Boolean) {
         WarningBanner("${it.language.englishName} cannot run a turn yet. ${it.detail}")
     }
 
+    // Two separate admissions for a language on a borrowed voice, because they are two different
+    // problems and a teacher can act on them differently. The voice being wrong is cosmetic and
+    // permanent until a real Santali VITS is trained. The words being unchecked is a safety matter.
+    if (language.voice == Support.BORROWED) {
+        WarningBanner(
+            "${language.voiceNote} Anything outside the verified phrasebook is machine " +
+                "translation shown as \u201c\u26a0 Machine\u201d \u2014 no Santali speaker has " +
+                "reviewed it, so do not rely on it for anything that matters.",
+        )
+    }
+
     if (language == TargetLanguage.MUNDARI && !DemoSeed.DEMO_STRINGS_VERIFIED) {
         WarningBanner(
             "The pipeline below is real. The Mundari is not: every target string in this build is " +
@@ -1090,6 +1101,12 @@ private fun LanguagePicker(
                             .size(9.dp)
                             .background(
                                 when {
+                                    // A borrowed voice is checked BEFORE canRunFullTurn, which is
+                                    // true for both. Green would claim a Santali voice this tablet
+                                    // does not have; amber says "runs, with a caveat" — the same
+                                    // hue the Approximate provenance chip uses, for the same reason.
+                                    lang.voice == Support.BORROWED ->
+                                        BolmitraColors.Approximate
                                     lang.canRunFullTurn -> BolmitraColors.Verified
                                     lang.voice == Support.PLANNED -> BolmitraColors.Approximate
                                     else -> BolmitraColors.Unavailable

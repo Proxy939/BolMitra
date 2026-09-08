@@ -32,6 +32,7 @@ import org.bolmitra.speech.SherpaMundariTts
 import org.bolmitra.speech.SherpaStreamingAsr
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.translate.IndicTrans2Decoder
+import org.bolmitra.translate.IndicTrans2MtEngine
 import org.bolmitra.translate.IndicTrans2Tokenizer
 import org.bolmitra.translate.Indictrans2SpikeHarness
 import org.bolmitra.ui.common.DualLineChart
@@ -334,6 +335,55 @@ fun Phase0ModelSection(modifier: Modifier = Modifier) {
                     }
                 },
             )
+            // The last unproven link. The spike above proves tokenizer and decoder; the TTS button
+            // proves Devanagari reaches the voice. This joins them: Hindi text in, Santali audio
+            // out, through OlChikiToDevanagari and DevanagariToOdia. Everything except the
+            // microphone, which needs a person to speak into it.
+            Spacer(Modifier.height(8.dp))
+            PillButton(
+                label = "Translate + speak Santali",
+                filled = false,
+                enabled = !busy && store.hasMtGraphs(TargetLanguage.SANTALI) && tts != null,
+                onClick = {
+                    measure("Hindi \u2192 Santali \u2192 audio") {
+                        val tk = tok ?: Indictrans2SpikeHarness
+                            .loadTokenizer(store, TargetLanguage.SANTALI).also { tok = it }
+                        val d = mt ?: Indictrans2SpikeHarness.load(
+                            store, TargetLanguage.SANTALI, IndicTrans2Decoder.DEFAULT_THREADS,
+                        ).also { mt = it }
+                        val engine = IndicTrans2MtEngine(tk, d)
+                        // Open-domain on purpose: this sentence is not in the phrasebook, so it can
+                        // only come from T1. It is also the one the desktop eval round-tripped
+                        // cleanly, so a bad result here points at the device, not the model.
+                        val hindi = "\u0906\u091C \u0939\u092E \u0917\u093F\u0928\u0924\u0940 " +
+                            "\u0938\u0940\u0916\u0947\u0902\u0917\u0947"
+                        val out = engine.translate(hindi)
+                            ?: return@measure "translate returned null"
+                        val clip = tts?.synthesizeUtterance(out.targetTextDeva)
+                        val odia = tts?.lastTransliteration
+                        if (clip == null) {
+                            "olck='${out.targetTextNative}' deva='${out.targetTextDeva}' " +
+                                "but synthesis returned null (dropped=${odia?.unmapped})"
+                        } else {
+                            "%.2f s audio \u00b7 olck='%s' \u00b7 deva='%s' \u00b7 odia='%s'".format(
+                                clip.pcm16Mono16k.size / 16000.0,
+                                out.targetTextNative,
+                                out.targetTextDeva,
+                                odia?.odia ?: "?",
+                            )
+                        }
+                    }
+                },
+            )
+            if (tts == null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Load the voice first \u2014 Santali is spoken by the Mundari VITS.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = BolmitraColors.InkMuted,
+                )
+            }
+
             if (!store.hasMtGraphs(TargetLanguage.SANTALI)) {
                 Spacer(Modifier.height(8.dp))
                 Text(

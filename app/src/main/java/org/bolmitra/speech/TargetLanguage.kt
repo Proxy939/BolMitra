@@ -43,8 +43,21 @@ enum class TargetLanguage(
     /** Script the teacher reads and the worksheets print. */
     val script: Script,
 
-    /** Subdirectory under [ModelStore]'s root holding this language's voice. */
+    /**
+     * Subdirectory under [ModelStore]'s root holding the voice this language is spoken with.
+     *
+     * Not always its *own* voice — see [Support.BORROWED] and [voiceNote]. Santali points at
+     * `tts-unr` because no Santali voice exists that this runtime can execute.
+     */
     val voiceDir: String,
+
+    /**
+     * Why the voice is not this language's own, or null when it is.
+     *
+     * Surfaced in the picker. A borrowed voice is a real limitation the teacher can hear, so it
+     * belongs on screen rather than in a source comment.
+     */
+    val voiceNote: String? = null,
 
     /**
      * Subdirectory holding the Hindi→this-language MT model, or null when no model exists.
@@ -81,17 +94,21 @@ enum class TargetLanguage(
         // IndicTrans2 emits Ol Chiki natively, so no transliteration sits on this path — unlike
         // Mundari, where the voice forced a Devanagari→Odia hop.
         script = Script.OL_CHIKI,
-        voiceDir = "tts-sat",
-        // int8 ONNX export of ai4bharat/indictrans2-indic-indic-dist-320M (MIT), 519 MB across
-        // three graphs. Verified on desktop at 10/11 exact match against the PyTorch original on
-        // the eval sentences, so quantisation is not what limits this — the 320M's own quality is
-        // (~5/11 acceptable, weakest on the short imperatives T0 already covers).
+        // Mundari's voice, deliberately. There is no Santali voice this runtime can run: the only
+        // one that exists is ai4bharat/indic-parler-tts, a transformer LM plus a neural codec that
+        // sherpa-onnx cannot execute, and there is no mms-tts-sat. Mundari is the closest available
+        // phonology — both are North Munda — and the text reaching it is Devanagari either way,
+        // via OlChikiToDevanagari then DevanagariToOdia.
+        voiceDir = "tts-unr",
+        voiceNote = "Spoken by the Mundari voice — no Santali voice exists that this tablet can " +
+            "run. The words are Santali; the accent is not.",
+        // int8 ONNX export of ai4bharat/indictrans2-indic-indic-dist-320M (MIT), fused to one
+        // decoder at 195 MB. Verified on device: token ids match the desktop reference 10/11, the
+        // one difference being a near-tie flip in int8 arithmetic. Quantisation is not the limit —
+        // the 320M's own quality is (~5/11 acceptable, weakest on the short imperatives T0 covers).
         mtDir = "mt-hi-sat",
-        // Both models exist and are permissively licensed, but neither is wired yet, and the voice
-        // has a real runtime problem: Indic Parler-TTS is a transformer LM plus a neural codec,
-        // which sherpa-onnx cannot execute. Porting it is the blocking task, not downloading it.
-        translation = Support.PLANNED,
-        voice = Support.PLANNED,
+        translation = Support.WORKING,
+        voice = Support.BORROWED,
     ),
 
     HO(
@@ -107,9 +124,16 @@ enum class TargetLanguage(
     ),
     ;
 
-    /** True only when a full voice-to-voice turn is possible for this language today. */
+    /**
+     * True only when a full voice-to-voice turn is possible for this language today.
+     *
+     * A borrowed voice still counts — it makes real sound in the right words, and refusing to run
+     * would leave Santali silent when it does not have to be. [translation] is deliberately not
+     * consulted: §4.5 is explicit that T0 alone satisfies every stated requirement, so a language
+     * with a voice and no MT is still a working app.
+     */
     val canRunFullTurn: Boolean
-        get() = voice == Support.WORKING
+        get() = voice == Support.WORKING || voice == Support.BORROWED
 
     /**
      * One line explaining the language's status, for the UI to show under the picker.
@@ -120,6 +144,17 @@ enum class TargetLanguage(
         get() = when {
             translation == Support.WORKING && voice == Support.WORKING ->
                 "Translation and voice both working."
+            // The Santali case. Kept short and does NOT repeat voiceNote — the warning banner
+            // carries that in full, and saying it twice on one screen trains people to skip both.
+            translation == Support.WORKING && voice == Support.BORROWED ->
+                "Open-domain translation works, but every phrase is unreviewed machine output, " +
+                    "and the voice belongs to another language."
+            voice == Support.BORROWED ->
+                "A borrowed voice can speak this language's script, but no translation model " +
+                    "exists, so only verified phrasebook entries can be used."
+            translation == Support.WORKING && voice == Support.PLANNED ->
+                "Translation works, but there is no voice yet — the text can be shown and read " +
+                    "aloud by the teacher, not spoken by the tablet."
             voice == Support.WORKING && translation == Support.UNAVAILABLE ->
                 "Voice works. No Hindi\u2013$englishName translation model exists anywhere, so " +
                     "only verified phrasebook entries can be spoken."
@@ -145,6 +180,17 @@ enum class TargetLanguage(
 enum class Support {
     /** Model is present, converted, and the runtime executes it. Verified on device. */
     WORKING,
+
+    /**
+     * It works, but using another language's model.
+     *
+     * Distinct from [WORKING] because the difference is audible. Santali is spoken by the Mundari
+     * voice: the closest phonology that will actually run, since the only real Santali voice is a
+     * transformer LM plus neural codec that sherpa-onnx cannot execute. Collapsing this into
+     * WORKING would let the app claim a Santali voice it does not have; collapsing it into
+     * [PLANNED] would keep Santali silent when it need not be. Neither is true, so this exists.
+     */
+    BORROWED,
 
     /**
      * A usable model exists upstream but is not yet converted, exported or wired. Blocked on our
