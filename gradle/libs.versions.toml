@@ -1,0 +1,63 @@
+[versions]
+# sherpa-onnx is NOT published to Maven Central (verified 2026-09-03 — only unofficial
+# third-party repackages exist, which are unusable here since their build flags and
+# provenance cannot be verified). The official artifact is a GitHub release asset, so it
+# is fetched and hash-verified by the fetchSherpaOnnxAar task in app/build.gradle.kts.
+sherpaOnnx = "1.13.7"
+# Verified against Google Maven / Maven Central on 2026-09-03.
+# AGP floor is 8.5.1 per ARCHITECTURE.md §4.8.2 (16 KB .so alignment via bundletool); 9.4.0 exceeds it.
+agp = "9.4.0"
+kotlin = "2.4.10"
+coreKtx = "1.19.0"
+lifecycle = "2.11.0"
+activityCompose = "1.13.0"
+composeBom = "2026.08.00"
+junit = "4.13.2"
+room = "2.8.4"
+# ONNX Runtime for the T1 MT tier (§4.5). This is the SECOND ONNX Runtime in the build and that
+# is deliberate — see the note on onnxruntime-android below.
+#
+# 1.29.0 verified 2026-09-08 against the 16 KB page requirement that §4.8.2 exists to enforce:
+# both arm64-v8a libraries report LOAD p_align 0x4000. The V33 finding that killed the non-static
+# sherpa AAR was about sherpa's own BUNDLED ORT build, not Microsoft's current official artifact,
+# so it does not transfer. libonnxruntime.so does have an unaligned PT_GNU_RELRO end (+4096),
+# which is the WARN-only rung of check-apk-alignment.ps1 and the same condition AndroidX's
+# libandroidx.graphics.path.so already has.
+onnxruntime = "1.29.0"
+# KSP moved to standalone versioning (KSP2); it is no longer <kotlin>-<ksp>.
+ksp = "2.3.11"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# `Icons.Filled.*` is NOT transitive through material3 in compose-bom 2026.08.00 — verified by
+# the compiler, which rejected every `androidx.compose.material.icons` import until this was
+# added. Only the ~45-icon core set is pulled in; material-icons-extended is ~5 MB of vectors and
+# is not needed, since every icon the UI uses is in core.
+androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+# The `ai.onnxruntime.*` Java API, needed because sherpa-onnx cannot run an encoder-decoder MT
+# model — verified by listing the AAR: 128 classes, zero under ai/onnxruntime, no seq2seq or
+# tokenizer classes of any kind. IndicTrans2 therefore needs its own runtime rather than a config
+# object handed to sherpa.
+#
+# Cost, stated plainly: +30.7 MB of arm64 native (libonnxruntime.so 30.6 + the JNI shim 0.1).
+# abiFilters drops the other three ABIs, so the AAR's 37 MB is not the shipped figure.
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+# No kotlin-android entry: AGP 9 built-in Kotlin replaces it.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

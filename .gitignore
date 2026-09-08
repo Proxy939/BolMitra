@@ -1,0 +1,58 @@
+*.iml
+.gradle/
+.kotlin/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# Models and packs are large and licence-restricted (MMS-TTS CC-BY-NC, Karya
+# Public License). Never commit them; they ship as signed packs, not in git.
+# See ARCHITECTURE.md §4.4 and Phase 0's licence-clearance task.
+models/
+packs/
+*.onnx
+*.tflite
+
+# Phase 0 measurement output
+render-check/
+*.perfetto-trace
+*.hprof
+
+# Local build logs
+build-log*.txt
+test-log.txt
+b.txt
+
+# Python side of the toolchain: local venv and bytecode cache for the
+# tools/*.py model-conversion and eval scripts. The scripts are committed,
+# the environment they run in is not.
+.venv*/
+__pycache__/
+*.pyc
+
+# Scratch and eval output from tools/ — probe dumps, decode logs, eval
+# transcripts. Regenerated on demand, never reviewed as source.
+tools/_*
+tools/*-eval-*.txt
+tools/santali-eval-output.txt
+tools/santali-onnx-verify.txt
+
+# Architecture doc is maintained outside git.
+ARCHITECTURE.md
+ARCHITECTURE.pdf
+
+# Scratch output from tools/ui-probe.ps1 — a uiautomator dump pulled off the device.
+ui.xml
+
+# sherpa-onnx AAR is fetched and SHA-256 verified at build time by the
+# fetchSherpaOnnxAar task, not committed. See ARCHITECTURE.md §5.2 Resolution 0.
+app/libs/*.aar
+tools/aar-check/

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose-only app, so the XML theme stays minimal and parents on a platform theme
+      rather than pulling in the Material XML library.
+
+      Transparent system bars: targetSdk 35+ enforces edge-to-edge, so the app must draw
+      behind the bars and apply insets in Compose. See .kiro/skills/edge-to-edge.
+    -->
+    <style name="Theme.BolMitra" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

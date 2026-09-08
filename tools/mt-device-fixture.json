@@ -1,0 +1,355 @@
+{
+  "_comment": "Reference for the Android ORT spike. Produced by tools/mt-decode-raw.py against the int8 graphs of TigreGotico/indictrans2-indic-indic-dist-320M-onnx. input_ids are already IndicProcessor-preprocessed and SentencePiece-encoded, so the device does not need a tokenizer to run the gate. expected_output_ids is what a correct greedy decode must reproduce EXACTLY.",
+  "repo": "TigreGotico/indictrans2-indic-indic-dist-320M-onnx",
+  "n_layers": 18,
+  "n_heads": 8,
+  "head_dim": 64,
+  "decoder_start_token_id": 2,
+  "eos_token_id": 2,
+  "pad_token_id": 1,
+  "max_new_tokens": 64,
+  "no_repeat_ngram_size": 3,
+  "repetition_penalty": 1.15,
+  "sentences": [
+    {
+      "hindi": "किताब खोलो",
+      "tagged": "hin_Deva sat_Olck किताब खोलो",
+      "input_ids": [
+        8,
+        29925,
+        6535,
+        44762,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        103129,
+        48377,
+        93030,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱮᱦᱚᱵ ᱢᱮ ᱾",
+      "expected_text": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱮᱦᱚᱵ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "किताब बंद करो",
+      "tagged": "hin_Deva sat_Olck किताब बंद करो",
+      "input_ids": [
+        8,
+        29925,
+        6535,
+        1068,
+        449,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        103129,
+        48377,
+        90779,
+        89483,
+        83775,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱢᱮ ᱾",
+      "expected_text": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "ताली बजाओ",
+      "tagged": "hin_Deva sat_Olck ताली बजाओ",
+      "input_ids": [
+        8,
+        29925,
+        51533,
+        42912,
+        93,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        92123,
+        79671,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱛᱟᱞᱤ ᱢᱮ ᱾",
+      "expected_text": "ᱛᱟᱞᱤ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "ध्यान से सुनो",
+      "tagged": "hin_Deva sat_Olck ध्यान से सुनो",
+      "input_ids": [
+        8,
+        29925,
+        1190,
+        29,
+        55810,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        92861,
+        70985,
+        90832,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱢᱚᱱᱮ ᱠᱟᱛᱮ ᱵᱟᱰᱟᱭ ᱢᱮ ᱾",
+      "expected_text": "ᱢᱚᱱᱮ ᱠᱟᱛᱮ ᱵᱟᱰᱟᱭ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "अपना नाम बताओ",
+      "tagged": "hin_Deva sat_Olck अपना नाम बताओ",
+      "input_ids": [
+        8,
+        29925,
+        1370,
+        352,
+        39405,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        79072,
+        81465,
+        85080,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱟᱢᱟᱜ ᱧᱩᱛᱩᱢ ᱞᱟᱹᱭ ᱢᱮ ᱾",
+      "expected_text": "ᱟᱢᱟᱜ ᱧᱩᱛᱩᱢ ᱞᱟᱹᱭ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "मेरे साथ बोलो",
+      "tagged": "hin_Deva sat_Olck मेरे साथ बोलो",
+      "input_ids": [
+        8,
+        29925,
+        807,
+        117,
+        41886,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        76527,
+        80035,
+        89703,
+        85080,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱤᱧ ᱥᱟᱶ ᱠᱟᱛᱷᱟ ᱞᱟᱹᱭ ᱢᱮ ᱾",
+      "expected_text": "ᱤᱧ ᱥᱟᱶ ᱠᱟᱛᱷᱟ ᱞᱟᱹᱭ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "बैठ जाओ",
+      "tagged": "hin_Deva sat_Olck बैठ जाओ",
+      "input_ids": [
+        8,
+        29925,
+        12387,
+        8344,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        90538,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱥᱮᱱ ᱢᱮ ᱾",
+      "expected_text": "ᱥᱮᱱ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "खड़े हो जाओ",
+      "tagged": "hin_Deva sat_Olck खड़े हो जाओ",
+      "input_ids": [
+        8,
+        29925,
+        12623,
+        66,
+        8344,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        89729,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱛᱷᱟᱯᱚᱱ ᱢᱮ ᱾",
+      "expected_text": "ᱛᱷᱟᱯᱚᱱ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "पानी पीना है",
+      "tagged": "hin_Deva sat_Olck पानी पीना है",
+      "input_ids": [
+        8,
+        29925,
+        1550,
+        38388,
+        11,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        88706,
+        79283,
+        81098,
+        79018,
+        63364,
+        31428
+      ],
+      "expected_text_raw": "ᱫᱟᱜᱧᱟᱢ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱾",
+      "expected_text": "ᱫᱟᱜᱧᱟᱢ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱾"
+    },
+    {
+      "hindi": "आज हम गिनती सीखेंगे",
+      "tagged": "hin_Deva sat_Olck आज हम गिनती सीखेंगे",
+      "input_ids": [
+        8,
+        29925,
+        772,
+        293,
+        35022,
+        10532,
+        3692,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        98109,
+        73054,
+        94718,
+        73020,
+        77171,
+        67823,
+        31428
+      ],
+      "expected_text_raw": "ᱛᱮᱦᱮᱧ ᱟᱢ ᱞᱮᱠᱷᱟ ᱥᱮᱪ ᱢᱮ ᱾",
+      "expected_text": "ᱛᱮᱦᱮᱧ ᱟᱢ ᱞᱮᱠᱷᱟ ᱥᱮᱪ ᱢᱮ ᱾"
+    },
+    {
+      "hindi": "कल छुट्टी है इसलिए स्कूल बंद रहेगा",
+      "tagged": "hin_Deva sat_Olck कल छुट्टी है इसलिए स्कूल बंद रहेगा",
+      "input_ids": [
+        8,
+        29925,
+        710,
+        20676,
+        11,
+        1369,
+        2493,
+        1068,
+        5641,
+        2
+      ],
+      "attention_mask": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected_output_ids": [
+        90920,
+        81211,
+        85448,
+        71516,
+        91174,
+        86978,
+        75697,
+        79018,
+        63364,
+        98805,
+        97850,
+        51412,
+        90779,
+        89483,
+        83775,
+        84299,
+        31428
+      ],
+      "expected_text_raw": "ᱦᱚᱭᱦᱩᱫᱮ ᱪᱷᱟᱹᱲ ᱮᱢ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱚᱱᱟᱛᱮ ᱵᱤᱨᱫᱟᱹᱜᱟᱲ ᱠᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱦᱩᱭᱩᱜᱼᱟ ᱾",
+      "expected_text": "ᱦᱚᱭᱦᱩᱫᱮ ᱪᱷᱟᱹᱲ ᱮᱢ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱚᱱᱟᱛᱮ ᱵᱤᱨᱫᱟᱹᱜᱟᱲ ᱠᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱦᱩᱭᱩᱜᱼᱟ ᱾"
+    }
+  ]
+}

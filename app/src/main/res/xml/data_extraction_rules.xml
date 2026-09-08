@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ARCHITECTURE.md §6.9.4 / V52. allowBackup is already false in the manifest; these rules
+  are the belt-and-braces for Android 12+ where cloud backup and device-to-device transfer
+  are configured separately. Nothing in this app may leave the device automatically:
+  student records and phrase text are explicitly out of every sync and export path.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
