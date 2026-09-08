@@ -9,6 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -58,8 +59,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import org.bolmitra.R
 import org.bolmitra.device.DeviceSpec
 import org.bolmitra.device.DeviceTier
+import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.ui.theme.BolmitraColors
 import org.bolmitra.ui.theme.Dimens
 import org.bolmitra.ui.theme.Radius
@@ -126,7 +130,9 @@ fun LandingScreen(
         // holds its composition at any tablet size rather than at one hardcoded resolution.
         StarfieldBlobs(w, h)
 
-        SpaceIllustrations(w, h)
+        // No illustration layer. The floating astronaut that used to sit top-right was removed by
+        // request: it was decoration inherited from the reference poster, and it earned nothing on a
+        // screen whose only job is to say what this tablet does for a classroom.
 
         Column(Modifier.fillMaxSize()) {
             NavBar(onNavigate = onStart, onDiagnostics = onDiagnostics)
@@ -150,7 +156,11 @@ fun LandingScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                DisplayHeadline("SPEAK HINDI", "HEAR MUNDARI", w)
+                // "HEAR THEIR OWN" rather than naming one language. The app supports three, and the
+                // headline previously said MUNDARI — which read as a Mundari-only product and is the
+                // exact deduction §11.2 warns against, since the problem statement names Ho, Mundari
+                // and Santali equally. The three are named just below instead, where they fit.
+                DisplayHeadline("SPEAK HINDI", "HEAR THEIR OWN", w)
 
                 Spacer(Modifier.height(h * 0.085f))
 
@@ -159,7 +169,7 @@ fun LandingScreen(
                 // and produced "before it / reaches a / child." — an orphan line two words long.
                 // Letting it wrap on its own gives an even rag at any width.
                 Text(
-                    "Every phrase is checked by a Mundari speaker " +
+                    "Mundari, Santali and Ho. Every phrase is checked by a native speaker " +
                         "before it reaches a child. Nothing you say ever leaves this tablet.",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
@@ -177,8 +187,12 @@ fun LandingScreen(
 
                 Spacer(Modifier.height(h * 0.055f))
 
+                // All three endonyms, from TargetLanguage rather than retyped here, so adding a
+                // language stays a content change and this line cannot drift out of agreement with
+                // the picker in Live class.
                 Text(
-                    "\u0939\u093F\u0928\u094D\u0926\u0940 \u2192 \u092E\u0941\u0902\u0921\u093E\u0930\u0940" +
+                    "\u0939\u093F\u0928\u094D\u0926\u0940 \u2192 " +
+                        TargetLanguage.selectable.joinToString("  \u00B7  ") { it.endonym } +
                         "  \u00B7  Jharkhand  \u00B7  ${tier.name.lowercase()} \u00B7 %.1f GiB"
                             .format(spec.totalRamGiB),
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -251,10 +265,17 @@ private fun DisplayHeadline(line1: String, line2: String, containerWidth: Dp) {
                 .offset(x = -containerWidth * 0.008f, y = -containerWidth * 0.030f)
                 .graphicsLayer(scaleX = squeeze * 1.02f, transformOrigin = CentreOrigin),
         )
-        // 2. Grey extrude, down and to the right.
+        // 2. Extrude, down and to the right — the logo's orange rather than a neutral grey, so the
+        // hero carries all three brand colours at poster scale.
+        //
+        // This is the one place orange is allowed on the paper ground, and only because it is purely
+        // decorative: it is an offset copy of type that is also drawn solid on top, so it conveys
+        // nothing and a reader losing it entirely loses no information. Orange on Paper measures
+        // 2.41:1, below even the 3:1 non-text floor, so anything load-bearing in this colour here
+        // would be a real failure rather than a stylistic one.
         Text(
             "$line1\n$line2",
-            style = solid.copy(color = Color(0xFF8A8A8A)),
+            style = solid.copy(color = BolmitraColors.Ember),
             modifier = Modifier
                 .offset(x = containerWidth * 0.0055f, y = containerWidth * 0.0055f)
                 .graphicsLayer(scaleX = squeeze, transformOrigin = CentreOrigin),
@@ -317,13 +338,18 @@ private fun NavBar(onNavigate: () -> Unit, onDiagnostics: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(30.dp).background(BolmitraColors.Ink, CircleShape),
+            // The real emblem, replacing the "ब" placeholder tile. Drawn on white rather than the
+            // brand green: the mark's navy book and teal pages are designed for a white ground and
+            // the teal drops to about 1.4:1 against Leaf, which loses the book entirely.
+            Modifier.size(32.dp).background(Color.White, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                "\u092C",
-                style = MaterialTheme.typography.labelMedium,
-                color = BolmitraColors.OnInk,
+            Image(
+                painter = painterResource(R.drawable.ic_bolmitra_emblem),
+                // Named for a screen reader rather than left decorative: this is the app's identity
+                // and it is the first thing on the screen.
+                contentDescription = "BolMitra",
+                modifier = Modifier.size(26.dp),
             )
         }
         Spacer(Modifier.width(9.dp))
@@ -434,7 +460,11 @@ private fun DrawScope.drawStarfieldBlob(
         prev = next
     }
     path.close()
-    drawPath(path, Color(0xFF0B0B0B))
+    // Green, not black — same shapes, same positions, same star speckle, only the fill changed.
+    // [BolmitraColors.Ink] rather than the brighter [BolmitraColors.Leaf] on purpose: white stars on
+    // Leaf measure 2.16:1 and wash out, while on Ink they sit at ~14:1 and stay crisp. The blobs are
+    // what the stars are *for*, so the fill has to stay dark enough to hold them.
+    drawPath(path, BolmitraColors.Ink)
 
     // Stars, sampled inside a shrunken ellipse so none land outside the blob outline.
     repeat(starCount) {
@@ -447,11 +477,17 @@ private fun DrawScope.drawStarfieldBlob(
         val radius = if (big) 1.4.dp.toPx() + rng.nextFloat() * 1.dp.toPx() else
             0.35.dp.toPx() + rng.nextFloat() * 0.8.dp.toPx()
         val alpha = 0.30f + rng.nextFloat() * 0.70f
-        drawCircle(Color.White.copy(alpha = alpha), radius, Offset(x, y))
+        // A minority of the large stars take the logo's orange — a warm fleck against the green,
+        // which is the third brand colour appearing where it is actually legible: orange on Ink
+        // measures 5.62:1, against 1.25:1 on Leaf and 2.41:1 on Paper. Kept to the big ones only,
+        // and to roughly a third of those, so it reads as an accent rather than as two-tone noise.
+        val ember = big && rng.nextFloat() > 0.66f
+        val tint = if (ember) BolmitraColors.Ember else Color.White
+        drawCircle(tint.copy(alpha = alpha), radius, Offset(x, y))
         if (big) {
             // A faint halo on the brightest few, as in the reference's larger stars.
             drawCircle(
-                Color.White.copy(alpha = alpha * 0.18f),
+                tint.copy(alpha = alpha * 0.18f),
                 radius * 3.2f,
                 Offset(x, y),
             )
@@ -509,235 +545,4 @@ private fun StarfieldBlobs(w: Dp, h: Dp) {
             starCount = 22,
         )
     }
-}
-
-/**
- * Illustration layer — **currently empty, and that is a missing asset rather than a design choice.**
- *
- * The reference places six hand-inked drawings over the blobs: an astronaut top-right, an alien on
- * the left edge, a UFO bottom-centre-left, Saturn on the right, a cratered moon bottom-left and a
- * telescope bottom-centre. They were PNGs in the original `Landing launch/` folder. That folder has
- * been deleted and the replacement ships no images, so there is nothing to draw and nothing here
- * can invent them.
- *
- * To finish the screen, drop the six files into `app/src/main/res/drawable/` and add one `Image`
- * per slot below at the fractions already commented. The blob positions above are the anchors, so
- * each illustration lands over its own starfield the way the reference has it.
- */
-@Composable
-private fun SpaceIllustrations(w: Dp, h: Dp) {
-    // TODO(assets): re-supply the five remaining illustrations, then place them here. The astronaut
-    // no longer needs an asset — see [FloatingAstronaut].
-    //   alien      x ≈ 0.00 w, y ≈ 0.28 h, width ≈ 0.075 w
-    //   ufo        x ≈ 0.24 w, y ≈ 0.74 h, width ≈ 0.19 w
-    //   saturn     x ≈ 0.78 w, y ≈ 0.60 h, width ≈ 0.20 w
-    //   moon       x ≈ 0.02 w, y ≈ 0.68 h, width ≈ 0.13 w
-    //   telescope  x ≈ 0.56 w, y ≈ 0.82 h, width ≈ 0.15 w
-    Box(Modifier.fillMaxSize()) {
-        FloatingAstronaut(w, h)
-    }
-}
-
-/* --------------------------------------------------------------------------- astronaut */
-
-/**
- * Placement arithmetic for the astronaut, kept as plain numbers rather than inlined into the
- * composable so it can be checked by a normal JUnit test. The project has no Compose UI test
- * dependency and this does not justify adding one.
- */
-internal object AstronautSlot {
-    /**
-     * Left edge, as a fraction of viewport width.
-     *
-     * 0.815, moved right from 0.76 after seeing it on a device: `HEAR MUNDARI` reaches 0.81 w once
-     * centred, so at 0.76 the astronaut's raised arm sat on top of the `I`. The headline wins that
-     * argument — it is the hero, and the figure is decoration.
-     */
-    const val LEFT = 0.815f
-
-    /** Top edge, as a fraction of viewport height. */
-    const val TOP = 0.40f
-
-    const val WIDTH_OF_WIDTH = 0.165f
-    const val WIDTH_OF_HEIGHT = 0.28f
-
-    /** Height ÷ width of the figure, which is drawn in a 100 × 140 design space. */
-    const val ASPECT = 1.4f
-
-    /**
-     * Box size for a [w] × [h] viewport, in whatever unit is passed in.
-     *
-     * Taking the **smaller** of a width-derived and a height-derived size is what keeps the figure
-     * on screen at any aspect ratio. A width-only rule would overflow the bottom on anything much
-     * wider than 16:9: `0.20 w × 1.4` is `0.28 w`, which is `0.65 h` at 21:9, and the slot already
-     * starts `0.40 h` down. Tablets are 16:10 or 4:3, but an unfolded foldable or a resized desktop
-     * window is not, and this screen is the app's first impression.
-     */
-    fun size(w: Float, h: Float): Pair<Float, Float> {
-        val width = minOf(w * WIDTH_OF_WIDTH, h * WIDTH_OF_HEIGHT)
-        return width to width * ASPECT
-    }
-}
-
-/**
- * The astronaut: drawn procedurally and floated, with no image asset and no 3D engine.
- *
- * Two things were considered and rejected. A real model (SceneView/Filament plus a `.glb`) would
- * add a second native library and continuous GPU work to a decorative element, in an app already
- * managing a 464 MB model payload and sherpa-onnx's 16 KB alignment constraint. A 3D-rendered
- * still would be ~80 KB and fine, but there is no such file in the repo and the original
- * `Landing launch/` illustrations are gone. Drawing it follows what [StarfieldBlobs] and
- * [drawPaperAndLightStreak] already do here: vector, resolution-independent, zero bytes of APK.
- *
- * The depth comes from one radial gradient lit from the top-left — the same direction as the page's
- * beam — and the float from two out-of-phase drifts, a 5.2 s bob and an 8.1 s tilt. The periods are
- * deliberately not multiples of each other; matched periods make the motion read as a mechanical
- * loop rather than drifting in zero gravity.
- *
- * Both animated values are read *inside* the `graphicsLayer` lambda rather than through `by`. That
- * confines each frame's invalidation to the draw phase instead of recomposing and re-laying out the
- * whole slot sixty times a second, which matters on the low-tier tablets §5.4 targets.
- */
-@Composable
-private fun FloatingAstronaut(w: Dp, h: Dp) {
-    val (boxW, boxH) = AstronautSlot.size(w.value, h.value)
-    val slot = Modifier
-        .offset(x = w * AstronautSlot.LEFT, y = h * AstronautSlot.TOP)
-        .size(boxW.dp, boxH.dp)
-
-    // Perpetual motion that a user cannot pause is exactly what WCAG 2.2.2 is about, and drifting
-    // motion is a vestibular trigger. Android's global animator scale is the system-wide switch for
-    // this ("Remove animations" in accessibility settings sets it to 0), so honour it and draw the
-    // figure still. Not a nicety — the alternative is a screen some users cannot look at.
-    val scale = LocalContext.current.animatorDurationScale()
-    if (scale == 0f) {
-        Canvas(slot) { drawAstronaut() }
-        return
-    }
-
-    val drift = rememberInfiniteTransition(label = "astronaut")
-    val bob = drift.animateFloat(
-        initialValue = -1f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(5200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "bob",
-    )
-    val tilt = drift.animateFloat(
-        initialValue = -3.5f,
-        targetValue = 3.5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "tilt",
-    )
-
-    Canvas(
-        slot.graphicsLayer {
-            translationY = bob.value * boxH.dp.toPx() * 0.042f
-            rotationZ = tilt.value
-        },
-    ) {
-        drawAstronaut()
-    }
-}
-
-/** The system-wide animation switch. 0 means the user has asked for animations off. */
-private fun Context.animatorDurationScale(): Float =
-    Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-
-/**
- * The figure itself, in a 100 × 140 design space so every coordinate reads as a percentage of its
- * own width and the whole thing scales with the box it is given.
- *
- * Each part is filled and then outlined in ink. The outline is structural rather than stylistic:
- * the slot straddles the edge of the right-middle blob, so the boots and torso sit on `#0B0B0B`
- * while the helmet sits on near-white paper. A white fill with no outline would leave the helmet
- * invisible against the paper, and an ink fill would lose the legs against the blob. Outlining
- * everything is what makes one drawing work over both grounds.
- */
-private fun DrawScope.drawAstronaut() {
-    val u = size.width / 100f
-    fun at(x: Float, y: Float) = Offset(x * u, y * u)
-
-    val ink = Color(0xFF0B0B0B)
-    val stroke = Stroke(3.2f * u)
-
-    // Lit from the top-left, matching the page's diagonal beam so the shading agrees with the
-    // background instead of contradicting it. This gradient is the entire "3D" of the thing.
-    val suit = Brush.radialGradient(
-        0.00f to Color(0xFFFFFFFF),
-        0.55f to Color(0xFFEDEBE6),
-        1.00f to Color(0xFFB4B2AC),
-        center = at(34f, 24f),
-        radius = 92f * u,
-    )
-    val hardware = Brush.radialGradient(
-        0.0f to Color(0xFFD7D5D0),
-        1.0f to Color(0xFF8E8C87),
-        center = at(34f, 40f),
-        radius = 70f * u,
-    )
-
-    fun limb(a: Offset, b: Offset, thickness: Float) {
-        drawLine(ink, a, b, strokeWidth = (thickness + 6.4f) * u, cap = StrokeCap.Round)
-        drawLine(suit, a, b, strokeWidth = thickness * u, cap = StrokeCap.Round)
-    }
-
-    fun panel(x: Float, y: Float, pw: Float, ph: Float, r: Float, brush: Brush) {
-        val topLeft = at(x, y)
-        val boxSize = Size(pw * u, ph * u)
-        val corner = CornerRadius(r * u)
-        drawRoundRect(brush, topLeft, boxSize, corner)
-        drawRoundRect(ink, topLeft, boxSize, corner, style = stroke)
-    }
-
-    // Back to front, so each joint is covered by the part in front of it.
-    //
-    // Leg ends stop at y 126 / 124 rather than the design space's full 140. A round cap adds half
-    // the outlined thickness — (17 + 6.4) / 2 ≈ 11.7 — beyond the point given, so an end at 132
-    // puts the sole at 143.7 and the boot is drawn flattened against the bottom edge. Same reason
-    // the antenna ball below sits at y 4 and not y 2.
-    panel(20f, 52f, 60f, 46f, 13f, hardware)          // life-support pack
-    limb(at(41f, 96f), at(33f, 126f), 17f)            // left leg
-    limb(at(59f, 96f), at(69f, 124f), 17f)            // right leg
-    limb(at(34f, 62f), at(12f, 88f), 14f)             // left arm, down
-    limb(at(66f, 62f), at(89f, 70f), 14f)             // right arm, raised
-    panel(29f, 50f, 42f, 50f, 15f, suit)              // torso
-    panel(40f, 62f, 20f, 15f, 4f, hardware)           // chest control panel
-
-    // Three indicator lights on the panel.
-    repeat(3) { i ->
-        drawCircle(ink, 1.5f * u, at(44f + i * 6f, 69.5f))
-    }
-
-    // Gloves, at the ends of the arms.
-    listOf(at(12f, 88f), at(89f, 70f)).forEach { hand ->
-        drawCircle(suit, 8.5f * u, hand)
-        drawCircle(ink, 8.5f * u, hand, style = stroke)
-    }
-
-    // Helmet.
-    drawCircle(suit, 25f * u, at(50f, 28f))
-    drawCircle(ink, 25f * u, at(50f, 28f), style = stroke)
-
-    // Visor: dark glass with one soft highlight, which is what reads as curvature.
-    drawOval(Color(0xFF0E0E0E), at(32f, 12f), Size(36f * u, 30f * u))
-    drawOval(
-        Brush.radialGradient(
-            0f to Color(0x99FFFFFF),
-            1f to Color(0x00FFFFFF),
-            center = at(41f, 20f),
-            radius = 13f * u,
-        ),
-        at(34f, 14f),
-        Size(20f * u, 15f * u),
-    )
-
-    // Antenna.
-    drawLine(ink, at(32f, 12f), at(26f, 4f), strokeWidth = 2.6f * u, cap = StrokeCap.Round)
-    drawCircle(ink, 3f * u, at(26f, 4f))
 }

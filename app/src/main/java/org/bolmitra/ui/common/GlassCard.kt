@@ -153,7 +153,10 @@ fun InkCard(
     Card(
         modifier = modifier,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = BolmitraColors.Ink),
+        // The brand green, not the dark ink. This is the app's one high-emphasis card, so it is where
+        // the green should be loudest. Its content must be [BolmitraColors.OnLeaf] /
+        // [BolmitraColors.OnLeafMuted] — light text on this fill measures 1.96:1.
+        colors = CardDefaults.cardColors(containerColor = BolmitraColors.Leaf),
         elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
     ) {
         Column(Modifier.padding(contentPadding), content = content)
@@ -189,7 +192,9 @@ fun PillButton(
 ) {
     val fg = when {
         !enabled -> BolmitraColors.InkMuted
-        filled -> BolmitraColors.OnInk
+        // Filled buttons are the brand green now, so their label is DARK, not light. Keeping OnInk
+        // here would have put 1.96:1 text on every primary action in the app.
+        filled -> BolmitraColors.OnLeaf
         else -> BolmitraColors.Ink
     }
     Row(
@@ -198,7 +203,7 @@ fun PillButton(
             .then(
                 if (filled) {
                     Modifier.background(
-                        if (enabled) BolmitraColors.Ink else BolmitraColors.GlassStroke,
+                        if (enabled) BolmitraColors.Leaf else BolmitraColors.GlassStroke,
                         Radius.pill,
                     )
                 } else {
@@ -234,8 +239,10 @@ fun CircleAction(
     Box(
         modifier
             .size(Dimens.minTouchTarget)
-            .background(BolmitraColors.Glass, CircleShape)
-            .border(1.dp, BolmitraColors.GlassStroke, CircleShape)
+            // Orange fill with the dark icon on it, 5.62:1. This is the only always-present control
+            // in the top bar, so it is worth an accent; on glass it read as another piece of chrome.
+            .background(BolmitraColors.Ember, CircleShape)
+            .border(1.dp, BolmitraColors.Ink.copy(alpha = 0.25f), CircleShape)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

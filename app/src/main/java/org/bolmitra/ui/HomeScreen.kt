@@ -1,5 +1,6 @@
 package org.bolmitra.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,6 +57,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.painterResource
+import org.bolmitra.R
 import org.bolmitra.device.DeviceSpec
 import org.bolmitra.device.DeviceTier
 import org.bolmitra.phrasebook.DemoSeed
@@ -131,6 +134,11 @@ fun HomeScreen(
 ) {
     var current by remember { mutableStateOf(start) }
 
+    // Hoisted out of LivePane so the sidebar can show it. Which language a teacher is speaking into
+    // is app-level state, not one pane's private detail — keeping it inside LivePane is what let the
+    // rail claim Mundari while the picker said Santali.
+    var language by remember { mutableStateOf(TargetLanguage.DEFAULT) }
+
     BoxWithConstraints(modifier.fillMaxSize()) {
         val wide = maxWidth >= Dimens.wideBreakpoint
 
@@ -144,7 +152,12 @@ fun HomeScreen(
         ) {
             Row(Modifier.fillMaxSize().padding(Dimens.sectionGap)) {
                 if (wide) {
-                    SidebarRail(current, { current = it }, Modifier.width(218.dp).fillMaxHeight())
+                    SidebarRail(
+                        current,
+                        { current = it },
+                        language,
+                        Modifier.width(218.dp).fillMaxHeight(),
+                    )
                     Spacer(Modifier.width(Dimens.sectionGap))
                 }
                 Column(Modifier.weight(1f)) {
@@ -159,7 +172,8 @@ fun HomeScreen(
                         when (current) {
                             Destination.HOME ->
                                 DashboardPane(spec, tier, store, wide, micGranted) { current = it }
-                            Destination.LIVE -> LivePane(wide, micGranted)
+                            Destination.LIVE ->
+                                LivePane(wide, micGranted, language) { language = it }
                             Destination.WORKSHEETS -> WorksheetsPane(wide)
                             Destination.PHRASEBOOK -> PhrasebookPane()
                             Destination.DIAGNOSTICS -> DiagnosticsPane(spec, tier)
@@ -191,18 +205,21 @@ fun HomeScreen(
 private fun SidebarRail(
     current: Destination,
     onSelect: (Destination) -> Unit,
+    /** The target language selected in Live class. Displayed here, chosen there. */
+    language: TargetLanguage,
     modifier: Modifier = Modifier,
 ) {
     GlassCard(modifier = modifier, contentPadding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(28.dp).background(BolmitraColors.Ink, Radius.sm),
+                // The emblem on white — see the landing wordmark for why not on the brand green.
+                Modifier.size(30.dp).background(Color.White, Radius.sm),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    "\u092C",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = BolmitraColors.OnInk,
+                Image(
+                    painter = painterResource(R.drawable.ic_bolmitra_emblem),
+                    contentDescription = "BolMitra",
+                    modifier = Modifier.size(25.dp),
                 )
             }
             Spacer(Modifier.width(9.dp))
@@ -228,22 +245,30 @@ private fun SidebarRail(
                 style = MaterialTheme.typography.bodyMedium,
                 color = BolmitraColors.InkMuted,
             )
+            // Follows the picker. This was hardcoded to मुंडारी, so selecting Santali in Live class
+            // left the rail contradicting the screen next to it — the app disagreeing with itself
+            // about which language a teacher is about to speak to a class in.
             Text(
-                "\u092E\u0941\u0902\u0921\u093E\u0930\u0940",
+                language.endonym,
                 style = MaterialTheme.typography.titleMedium,
             )
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Devanagari \u00B7 pack demo-v0",
+            language.script.displayName +
+                if (DemoSeed.phrasesFor(language).isEmpty()) {
+                    " \u00B7 no pack"
+                } else {
+                    " \u00B7 pack demo-v0"
+                },
             style = MaterialTheme.typography.bodySmall,
             color = BolmitraColors.InkMuted,
         )
 
         Spacer(Modifier.weight(1f))
         Text(
-            "Santali and Ho are selectable in Live class, with what each one can actually do " +
-                "stated there. Adding a language is a content pack plus a voice, not a code branch.",
+            "All three are selectable in Live class, with what each one can actually do stated " +
+                "there. Adding a language is a content pack plus a voice, not a code branch.",
             style = MaterialTheme.typography.bodySmall,
             color = BolmitraColors.InkMuted,
         )
@@ -268,7 +293,7 @@ private fun NavRow(
         Modifier
             .fillMaxWidth()
             .heightIn(min = Dimens.minTouchTarget)
-            .background(if (selected) BolmitraColors.Ink else Color.Transparent, Radius.md)
+            .background(if (selected) BolmitraColors.Leaf else Color.Transparent, Radius.md)
             .clickable(role = Role.Tab, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -276,14 +301,14 @@ private fun NavRow(
         Icon(
             icon,
             contentDescription = null, // the adjacent label is the accessible name
-            tint = if (selected) BolmitraColors.OnInk else BolmitraColors.InkMuted,
+            tint = if (selected) BolmitraColors.OnLeaf else BolmitraColors.InkMuted,
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(12.dp))
         Text(
             title,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) BolmitraColors.OnInk else BolmitraColors.Ink,
+            color = BolmitraColors.Ink,
         )
     }
 }
@@ -312,7 +337,7 @@ private fun BottomBar(current: Destination, onSelect: (Destination) -> Unit) {
                     Icon(
                         d.icon,
                         contentDescription = d.label,
-                        tint = if (selected) BolmitraColors.OnInk else BolmitraColors.InkMuted,
+                        tint = if (selected) BolmitraColors.OnLeaf else BolmitraColors.InkMuted,
                         modifier = Modifier.size(21.dp),
                     )
                 }
@@ -393,8 +418,8 @@ private fun DashboardPane(
                 Row(horizontalArrangement = Arrangement.spacedBy(Dimens.targetGap)) {
                     ActionCard(
                         "Live class",
-                        "Speak Hindi, hear Mundari",
-                        "placeholder Mundari",
+                        "Speak Hindi, hear Mundari, Santali or Ho",
+                        "unreviewed content",
                         Modifier.weight(1f).height(160.dp),
                     ) { onNavigate(Destination.LIVE) }
                     ActionCard(
@@ -420,7 +445,7 @@ private fun DashboardPane(
             contentPadding = PaddingValues(vertical = 4.dp),
         ) {
             item {
-                ActionCard("Live class", "Speak Hindi, hear Mundari", "placeholder Mundari", Modifier.width(230.dp).height(160.dp)) {
+                ActionCard("Live class", "Speak Hindi, hear Mundari, Santali or Ho", "unreviewed content", Modifier.width(230.dp).height(160.dp)) {
                     onNavigate(Destination.LIVE)
                 }
             }
@@ -478,13 +503,13 @@ private fun ContentCard(
             Text(
                 "This tablet's content",
                 style = MaterialTheme.typography.titleLarge,
-                color = BolmitraColors.OnInk,
+                color = BolmitraColors.OnLeaf,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 "demo-v0",
                 style = MaterialTheme.typography.labelSmall,
-                color = BolmitraColors.OnInkMuted,
+                color = BolmitraColors.OnLeafMuted,
             )
         }
 
@@ -509,15 +534,15 @@ private fun ContentCard(
 @Composable
 private fun HeadlineMetric(value: String, caption: String) {
     Column {
-        Text(value, style = MaterialTheme.typography.displayLarge, color = BolmitraColors.OnInk)
+        Text(value, style = MaterialTheme.typography.displayLarge, color = BolmitraColors.OnLeaf)
         Box(
             Modifier
                 .padding(top = 4.dp, bottom = 8.dp)
                 .width(44.dp)
                 .height(2.dp)
-                .background(BolmitraColors.OnInk),
+                .background(BolmitraColors.OnLeaf),
         )
-        Text(caption, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnInkMuted)
+        Text(caption, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnLeafMuted)
     }
 }
 
@@ -525,13 +550,17 @@ private fun HeadlineMetric(value: String, caption: String) {
 private fun InkTile(value: String, caption: String, modifier: Modifier = Modifier) {
     Column(
         modifier
-            .background(BolmitraColors.InkSoft, Radius.md)
-            .border(1.dp, BolmitraColors.HairlineOnInk, Radius.md)
+            // A white scrim over the parent card's Leaf, not a fill of its own. These tiles are
+            // nested inside an InkCard, so a `Leaf` fill would be invisible against it and a dark
+            // fill would put back exactly the dark green this pass set out to remove. The scrim
+            // lifts the tile while keeping it green, and only makes the dark text more legible.
+            .background(Color.White.copy(alpha = 0.28f), Radius.md)
+            .border(1.dp, BolmitraColors.Ink.copy(alpha = 0.20f), Radius.md)
             .padding(14.dp),
     ) {
-        Text(value, style = MaterialTheme.typography.headlineMedium, color = BolmitraColors.OnInk)
+        Text(value, style = MaterialTheme.typography.headlineMedium, color = BolmitraColors.OnLeaf)
         Spacer(Modifier.height(2.dp))
-        Text(caption, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnInkMuted)
+        Text(caption, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnLeafMuted)
     }
 }
 
@@ -606,7 +635,7 @@ private fun ReadinessCard(
     val items = remember(store, micGranted) {
         listOf(
             "Hindi ASR model present" to store.hasStreamingAsr(),
-            "Mundari voice present" to store.hasTts(),
+            "Target-language voice present" to store.hasTts(),
             "Phrasebook lookup working" to true,
             // Was hardcoded false. Both are built now; capture depends on the runtime permission,
             // so it reports the permission rather than the code's existence.
@@ -671,15 +700,18 @@ private fun ActionCard(
         modifier = modifier.clickable(role = Role.Button, onClick = onClick),
         contentPadding = 16.dp,
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = BolmitraColors.OnInk)
+        Text(title, style = MaterialTheme.typography.titleMedium, color = BolmitraColors.OnLeaf)
         Spacer(Modifier.height(8.dp))
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnInkMuted)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = BolmitraColors.OnLeafMuted)
         Spacer(Modifier.weight(1f))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(status, style = MaterialTheme.typography.labelSmall, color = BolmitraColors.OnInkMuted)
+            Text(status, style = MaterialTheme.typography.labelSmall, color = BolmitraColors.OnLeafMuted)
             Spacer(Modifier.weight(1f))
+            // The "go" chip, in the logo's orange with the dark arrow on it — 5.62:1. A warm accent
+            // against the card's green, and the one element on each card that says "tap here", so it
+            // is worth the emphasis. Was flat Paper, which vanished into the card.
             Box(
-                Modifier.size(30.dp).background(BolmitraColors.Paper, Radius.sm),
+                Modifier.size(30.dp).background(BolmitraColors.Ember, Radius.sm),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -705,7 +737,7 @@ private fun PackCard(
         Text(
             label,
             style = MaterialTheme.typography.titleMedium,
-            color = BolmitraColors.OnInk,
+            color = BolmitraColors.OnLeaf,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -906,11 +938,15 @@ private fun PhrasebookPane() {
  * confident while speaking gibberish to children is the specific failure §4.5 exists to prevent.
  */
 @Composable
-private fun LivePane(wide: Boolean, micGranted: Boolean) {
+private fun LivePane(
+    wide: Boolean,
+    micGranted: Boolean,
+    language: TargetLanguage,
+    onLanguageChange: (TargetLanguage) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var language by remember { mutableStateOf(TargetLanguage.DEFAULT) }
     val engine = remember(language) { LiveTurnEngine.get(context, language) }
 
     var loadState by remember { mutableStateOf(engine.loadState) }
@@ -992,7 +1028,7 @@ private fun LivePane(wide: Boolean, micGranted: Boolean) {
         color = BolmitraColors.InkMuted,
     )
 
-    LanguagePicker(language) { language = it }
+    LanguagePicker(language, onLanguageChange)
 
     (loadState as? LiveTurnEngine.LoadState.Unsupported)?.let {
         WarningBanner("${it.language.englishName} cannot run a turn yet. ${it.detail}")
@@ -1037,19 +1073,19 @@ private fun LivePane(wide: Boolean, micGranted: Boolean) {
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Dimens.sectionGap),
             ) {
-                TurnCard(phase, canSpeak, result, error, ::runTurn)
+                TurnCard(phase, canSpeak, result, error, language, ::runTurn)
                 LatencyCard()
             }
             Column(
                 Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Dimens.sectionGap),
             ) {
-                GlassCard { StageList(livePipelineStages(micGranted, loadState)) }
+                GlassCard { StageList(livePipelineStages(micGranted, loadState, language)) }
             }
         }
     } else {
-        TurnCard(phase, canSpeak, result, error, ::runTurn)
-        GlassCard(Modifier.fillMaxWidth()) { StageList(livePipelineStages(micGranted, loadState)) }
+        TurnCard(phase, canSpeak, result, error, language, ::runTurn)
+        GlassCard(Modifier.fillMaxWidth()) { StageList(livePipelineStages(micGranted, loadState, language)) }
         LatencyCard()
     }
 }
@@ -1082,8 +1118,12 @@ private fun LanguagePicker(
                 Row(
                     Modifier
                         .heightIn(min = Dimens.minTouchTarget)
+                        // Brand green marks the selected language — the most useful place for an
+                        // accent on this screen. It carries DARK text (Ink on Leaf is 6.96:1);
+                        // the light-on-dark treatment this pill used before would have measured
+                        // 1.96:1 on Leaf, so the label colours below flip with the fill.
                         .background(
-                            if (active) BolmitraColors.Ink else Color.Transparent,
+                            if (active) BolmitraColors.Leaf else Color.Transparent,
                             Radius.pill,
                         )
                         .border(
@@ -1112,22 +1152,35 @@ private fun LanguagePicker(
                                     else -> BolmitraColors.Unavailable
                                 },
                                 CircleShape,
+                            )
+                            // Ring in the pill's own foreground colour. Without it the Verified dot
+                            // is a dark green disc on the dark green Ink fill of the active pill and
+                            // simply disappears — the palette change turned a status signal into
+                            // decoration. The ring keeps the dot visible on either ground whatever
+                            // the hues do next.
+                            // Ring in Ink on the active (bright green) pill and a hairline
+                            // elsewhere, so the dot reads on either ground. Without it the amber
+                            // and green status dots blur into the Leaf fill.
+                            .border(
+                                1.dp,
+                                if (active) BolmitraColors.Ink else BolmitraColors.GlassStroke,
+                                CircleShape,
                             ),
                     )
                     Column {
+                        // Ink on Leaf when active, not OnInk. The fill is bright, so the text has
+                        // to be the dark one — the inverse of the old dark-pill treatment.
                         Text(
                             lang.englishName,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (active) BolmitraColors.OnInk else BolmitraColors.Ink,
+                            color = BolmitraColors.Ink,
                         )
                         Text(
                             lang.endonym,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (active) {
-                                BolmitraColors.OnInkMuted
-                            } else {
-                                BolmitraColors.InkMuted
-                            },
+                            // InkMuted on Leaf is only ~1.4:1, so the secondary line stays full Ink
+                            // on the active pill and merely loses the muting.
+                            color = if (active) BolmitraColors.Ink else BolmitraColors.InkMuted,
                         )
                     }
                 }
@@ -1162,6 +1215,7 @@ private enum class TurnPhase { IDLE, LOADING, LISTENING, THINKING }
 private fun livePipelineStages(
     micGranted: Boolean,
     load: LiveTurnEngine.LoadState?,
+    language: TargetLanguage,
 ): List<Triple<String, String, Boolean>> {
     val enginesReady = load is LiveTurnEngine.LoadState.Ready
     return listOf(
@@ -1180,9 +1234,25 @@ private fun livePipelineStages(
             if (enginesReady) "NeMo CTC \u00B7 loaded" else "not loaded",
             enginesReady,
         ),
-        Triple("4. T0 phrasebook lookup", "exact \u2192 template \u2192 fuzzy \u2192 miss", true),
         Triple(
-            "5. Mundari synthesis",
+            "4. T0 phrasebook lookup",
+            // Says when there is nothing to look up. DemoSeed carries Mundari phrases only, so for
+            // any other language T0 is empty and every turn necessarily falls through to T1.
+            if (DemoSeed.phrasesFor(language).isNotEmpty()) {
+                "exact \u2192 template \u2192 fuzzy \u2192 miss"
+            } else {
+                "no ${language.englishName} pack \u00B7 every turn falls through to T1"
+            },
+            DemoSeed.phrasesFor(language).isNotEmpty(),
+        ),
+        Triple(
+            // Names the selected language, and says plainly when the voice is on loan rather than
+            // letting the row imply a voice that does not exist.
+            if (language.voice == Support.BORROWED) {
+                "5. ${language.englishName} synthesis (Mundari voice)"
+            } else {
+                "5. ${language.englishName} synthesis"
+            },
             if (enginesReady) "VITS \u00B7 loaded, Odia input (V63)" else "not loaded",
             enginesReady,
         ),
@@ -1207,6 +1277,8 @@ private fun TurnCard(
     canSpeak: Boolean,
     result: LiveTurnEngine.TurnResult?,
     error: String?,
+    /** Threaded in purely so the result rows can name the language actually selected. */
+    language: TargetLanguage,
     onSpeak: () -> Unit,
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
@@ -1263,7 +1335,11 @@ private fun TurnCard(
                 is TurnOutcome.TextOnly -> outcome.devanagariText
                 is TurnOutcome.Unavailable -> null
             }
-            DataRow("Spoken (Mundari)", target ?: "\u2014")
+            // Names the language actually selected. This said "Mundari" unconditionally, so
+            // choosing Santali produced Ol Chiki text under a Mundari label — the app contradicting
+            // its own picker, which is the worst kind of wrong for a screen whose whole purpose is
+            // telling a teacher what they are hearing.
+            DataRow("Spoken (${language.englishName})", target ?: "\u2014")
 
             val reason = when (outcome) {
                 is TurnOutcome.TextOnly -> outcome.reason.name

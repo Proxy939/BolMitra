@@ -23,8 +23,18 @@ import org.junit.Test
 class GlassContrastTest {
 
     private val inkMuted = 0x5A
-    private val ink = 0x0E
     private val paper = 0xF2
+
+    /**
+     * `BolmitraColors.Ink`, as packed RGB rather than a grey byte.
+     *
+     * It became a deep green, so it can no longer be treated as a neutral — the single-channel
+     * shortcut would report the luminance of `0x0A`, which is far darker than the colour actually
+     * is, and every assertion below would pass for the wrong reason.
+     */
+    private val inkRgb = 0x112C00
+
+    private fun inkOn(grey: Int) = Contrast.ratioHexToGrey(inkRgb, grey)
 
     @Test
     fun `luminance and ratio agree with known WCAG values`() {
@@ -33,7 +43,9 @@ class GlassContrastTest {
         // A colour against itself is 1:1.
         assertEquals(1.0, Contrast.ratio(inkMuted, inkMuted), 1e-9)
         // Order must not matter.
-        assertEquals(Contrast.ratio(ink, paper), Contrast.ratio(paper, ink), 1e-9)
+        assertEquals(Contrast.ratio(inkMuted, paper), Contrast.ratio(paper, inkMuted), 1e-9)
+        // A neutral grey read through the RGB form must agree with the grey form.
+        assertEquals(Contrast.luminance(0x5A), Contrast.luminanceHex(0x5A5A5A), 1e-12)
         // Mid grey #767676 on white is the well-known 4.54:1 boundary case.
         assertTrue(Contrast.ratio(0x76, 0xFF) in 4.5..4.6)
     }
@@ -73,27 +85,120 @@ class GlassContrastTest {
     fun `primary text has far more headroom than the AA floor`() {
         val bg = GlassAlpha.worstCaseCardBackdrop()
         // Ink is the workhorse for headings and values; it should not be near the line at all.
-        assertTrue(Contrast.ratio(ink, bg) >= 10.0)
+        // Green ink has less headroom here than the old near-black (~11.8:1 vs ~15.2:1), so this
+        // assertion is now doing real work rather than passing by a mile.
+        assertTrue("Ink on worst-case glass is ${inkOn(bg)}:1", inkOn(bg) >= 10.0)
     }
 
     /**
      * The landing screen's glass nav bar crosses a starfield blob, so its labels sit on glass over
-     * `#0B0B0B` rather than over silk. Only [BolmitraColors.Ink] survives that; this pins both
+     * the blob fill rather than over silk. Only [BolmitraColors.Ink] survives that; this pins both
      * halves of the fact, so the "use Ink here" rule in the nav has a reason attached that fails
      * loudly if the glass alpha ever moves.
      */
     @Test
     fun `over a starfield blob only Ink is legible on glass`() {
-        val overBlob = Contrast.whiteOver(GlassAlpha.BOTTOM, GlassAlpha.BLOB)
+        // Per-channel now: the blobs are green, so compositing through the grey form would report a
+        // ground far darker than the real one and this test would pass for the wrong reason.
+        val overBlob = Contrast.whiteOverRgb(GlassAlpha.BOTTOM, GlassAlpha.BLOB)
 
         assertTrue(
-            "Ink on glass over a blob is ${Contrast.ratio(ink, overBlob)}:1, under AA",
-            Contrast.ratio(ink, overBlob) >= GlassAlpha.AA_BODY,
+            "Ink on glass over a blob is ${Contrast.ratioHex(inkRgb, overBlob)}:1, under AA. " +
+                "Darken BolmitraColors.Ink — this is the constraint its doc comment describes.",
+            Contrast.ratioHex(inkRgb, overBlob) >= GlassAlpha.AA_BODY,
         )
         assertTrue(
             "InkMuted has become legible over a blob — if that is intended, the comment on " +
                 "GlassAlpha.BLOB and the landing nav's colour choice both need revisiting",
-            Contrast.ratio(inkMuted, overBlob) < GlassAlpha.AA_BODY,
+            Contrast.ratioHex(0x5A5A5A, overBlob) < GlassAlpha.AA_BODY,
+        )
+    }
+
+    /**
+     * Orange's two legitimate grounds, and the two it must stay off.
+     *
+     * The failure this prevents is someone reaching for the logo's orange as a general accent —
+     * a rule on the paper background, an icon on a green card — where it measures below even the
+     * non-text floor and quietly disappears.
+     */
+    @Test
+    fun `Ember is legible only on dark green, in either direction`() {
+        val ember = 0xF57C1F
+        val leaf = 0x5CC800
+
+        assertTrue(
+            "Ember on Ink is ${Contrast.ratioHex(ember, inkRgb)}:1 — one of its two valid grounds",
+            Contrast.ratioHex(ember, inkRgb) >= GlassAlpha.AA_BODY,
+        )
+        assertTrue(
+            "Ink on Ember is ${Contrast.ratioHex(inkRgb, ember)}:1 — the other valid ground",
+            Contrast.ratioHex(inkRgb, ember) >= GlassAlpha.AA_BODY,
+        )
+        // 3.0 is WCAG's floor for non-text graphics, which is the weakest bar orange could be held
+        // to on these grounds. It fails even that, so there is no "but it is only an icon" exception.
+        assertTrue(
+            "Ember reached the 3:1 graphics floor on Paper. If that is intended, revisit the rule " +
+                "that it is decoration-only there — the landing headline extrude relies on it.",
+            Contrast.ratioHex(ember, 0xF2F2F2) < 3.0,
+        )
+        assertTrue(
+            "Ember reached the 3:1 graphics floor on Leaf — it was 1.25:1 and unusable there",
+            Contrast.ratioHex(ember, leaf) < 3.0,
+        )
+    }
+
+    /**
+     * Orange must never be mistaken for the amber that means "approximate".
+     *
+     * §4.5 requires provenance to be unambiguous, and a teacher learns the amber chip. Orange sits
+     * next to it in hue, so if the two ever drift close enough to be confused, this fails — the fix
+     * is to move orange or to stop using it near status, not to loosen the check.
+     */
+    @Test
+    fun `Ember stays clear of the provenance palette in role, and is checked against amber`() {
+        val ember = 0xF57C1F
+        val approximate = 0x8A5300
+        // They are genuinely similar — 2.35:1 — which is exactly why Ember is barred from every
+        // status, badge and provenance position. This asserts the similarity so the reason is
+        // recorded rather than assumed, and so a future edit cannot silently claim they are distinct.
+        assertTrue(
+            "Ember and Approximate have diverged. If Ember moved, the ban on using it in status " +
+                "roles may be reconsidered — but only deliberately.",
+            Contrast.ratioHex(ember, approximate) < 3.0,
+        )
+    }
+
+    /**
+     * The supplied brand green is an accent, and this pins why.
+     *
+     * `Leaf` (`#5CC800`) is the project's green, but it cannot carry text and cannot hold the
+     * starfield's white dots. Anyone reaching for "just make it the main colour" should fail here
+     * rather than discover it in a sunlit classroom, which per §6.13 is the condition that matters.
+     */
+    @Test
+    fun `Leaf works under dark text and nowhere else`() {
+        val leaf = 0x5CC800
+        assertTrue(
+            "Ink on Leaf is ${Contrast.ratioHex(inkRgb, leaf)}:1 — the one combination that works",
+            Contrast.ratioHex(inkRgb, leaf) >= GlassAlpha.AA_BODY,
+        )
+        assertTrue(
+            "Leaf has become legible as body text on Paper. If Leaf changed, revisit every place " +
+                "the palette assumes it is a fill rather than an ink.",
+            Contrast.ratioHex(leaf, 0xF2F2F2) < GlassAlpha.AA_BODY,
+        )
+        assertTrue(
+            "OnInk on Leaf is legible now — a light-on-Leaf button would have been unreadable",
+            Contrast.ratioHex(0xF4F4F4, leaf) < GlassAlpha.AA_BODY,
+        )
+        // White starfield dots need a dark ground. This is why the blobs are Ink and not Leaf.
+        assertTrue(
+            "white dots on Leaf reached AA — the blob fill choice can be revisited",
+            Contrast.ratioHex(0xFFFFFF, leaf) < GlassAlpha.AA_BODY,
+        )
+        assertTrue(
+            "white dots on Ink must stay crisp, they are what the blobs exist for",
+            Contrast.ratioHex(0xFFFFFF, inkRgb) >= 10.0,
         )
     }
 

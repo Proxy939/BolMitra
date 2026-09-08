@@ -83,7 +83,16 @@ class LiveTurnEngine private constructor(
      */
     private var mt: IndicTrans2MtEngine? = null
 
-    private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(DemoSeed.phrases)
+    /**
+     * T0 for THIS language only.
+     *
+     * Was `InMemoryPhrasebook(DemoSeed.phrases)` — unconditional, and a real bug: `DemoSeed` holds
+     * Mundari placeholders, so selecting Santali and speaking a seeded phrase returned Mundari text
+     * tagged `Provenance.VERIFIED`. The app would have claimed native-speaker review of content in
+     * the wrong language. A language with no pack now gets an empty T0 and falls through to T1,
+     * which labels itself `MACHINE`.
+     */
+    private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(DemoSeed.phrasesFor(language))
 
     /** Resolves a pack ref back to the phrase text, for [RenderingAudioPlayer]. */
     private val textForRef: (String) -> String? = { ref ->

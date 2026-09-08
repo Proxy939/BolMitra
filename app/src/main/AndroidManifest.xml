@@ -34,9 +34,17 @@
       upload app data to Google Drive. The privacy invariant says student records never
       leave the device, so this must be explicitly false.
     -->
+    <!--
+      Launcher icon. Adaptive only, declared in mipmap-anydpi-v26 with no legacy PNG fallbacks:
+      adaptive icons arrived in API 26 and minSdk is 28, so every device that can install this app
+      gets the vector. roundIcon is still worth declaring because some OEM launchers ask for it
+      explicitly rather than applying their own mask.
+    -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.BolMitra">

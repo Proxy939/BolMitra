@@ -53,10 +53,10 @@ import androidx.compose.ui.unit.sp
  *
  * | Colour | On | Ratio | AA 4.5:1 |
  * |---|---|---|---|
- * | [Ink] `#0E0E0E` | [Paper] | ~18.6:1 | passes |
+ * | [Ink] `#0A2D12` | [Paper] | ~13.4:1 | passes |
  * | [InkMuted] `#5A5A5A` | [Paper] | ~6.4:1 | passes |
- * | [OnInk] `#F4F4F4` | [Ink] | ~17.6:1 | passes |
- * | [OnInkMuted] `#9A9A9A` | [Ink] | ~6.9:1 | passes |
+ * | [OnInk] `#F4F4F4` | [Ink] | ~13.4:1 | passes |
+ * | [OnInkMuted] `#9A9A9A` | [Ink] | ~5.3:1 | passes |
  * | [Verified] `#1B5E20` | [Paper] | ~7.4:1 | passes |
  * | [Approximate] `#8A5300` | [Paper] | ~5.2:1 | passes |
  * | [Unavailable] `#8B1A1A` | [Paper] | ~7.6:1 | passes |
@@ -72,12 +72,102 @@ import androidx.compose.ui.unit.sp
  * get, [GlassAlpha.worstCaseCardContrast] composites the thinnest glass over that floor, and
  * `GlassContrastTest` fails the build if the combination stops clearing AA. The numbers in the table
  * are the *best* case, on plain [Paper]; the bounded worst case is **5.42:1 for [InkMuted]** and
- * **15.18:1 for [Ink]**, against a composite card background of `#E4E4E4` over the darkest the
- * backdrop is allowed to reach, `#C5C5C5`.
+ * **~11.8:1 for [Ink]** (was 15.18:1 while Ink was near-black), against a composite card background
+ * of `#E4E4E4` over the darkest the backdrop is allowed to reach, `#C5C5C5`.
  */
 object BolmitraColors {
-    val Ink = Color(0xFF0E0E0E)
-    val InkSoft = Color(0xFF1C1C1C)
+    /**
+     * The brand green, exactly as supplied: `#5CC800`.
+     *
+     * **An accent, not an ink, and the arithmetic is why rather than taste.** Measured against the
+     * §6.13 floor of 4.5:1:
+     *
+     * | Used as | Ratio | |
+     * |---|---|---|
+     * | text on [Paper] | **1.93:1** | fails — body text would be unreadable |
+     * | [OnInk] text on it | **1.96:1** | fails — a filled button with light text is unreadable |
+     * | [OnInkMuted] on it | **1.30:1** | fails badly |
+     * | white starfield dots on it | **2.16:1** | dots would wash out |
+     * | **[Ink] text on it** | **6.96:1** | **passes** |
+     *
+     * So it earns its place wherever something dark sits on top of it — a highlight fill, a chip, a
+     * marker, the wordmark tile — and nowhere that it has to *be* the dark thing. [Ink] carries the
+     * same hue at a value that can.
+     */
+    val Leaf = Color(0xFF5CC800)
+
+    /**
+     * [Leaf]'s hue at a value that can carry text: `#112C00`.
+     *
+     * This replaced the near-black `#0E0E0E`, so the whole UI now reads green rather than
+     * monochrome, and it is on the same yellow-green hue (~92°) as [Leaf] so the two look related
+     * rather than merely adjacent.
+     *
+     * **It is as light as the design can afford, and the bound is not aesthetic.** Two separate
+     * tests pin it, from opposite directions:
+     *
+     * | Against | Ratio | Needs |
+     * |---|---|---|
+     * | [Paper] | ~13.6:1 | 4.5 |
+     * | worst-case glass card | ~10.9:1 | 10.0 — `primary text has far more headroom` |
+     * | glass over a starfield blob | ~5.4:1 | 4.5 — landing nav legibility |
+     * | [OnInkMuted] on it | ~5.4:1 | 4.5 |
+     * | white starfield dots on it | ~15.2:1 | dots stay crisp |
+     *
+     * **Lightening it toward [Leaf] fails the 10:1 card assertion first, and it fails close.** The
+     * first attempt at this green was `#143300`, one shade lighter, which measured **9.99:1** — a
+     * miss by 0.007. The threshold was kept and the colour darkened rather than the reverse, because
+     * headings and values are set in this colour on glass and that guard is the only thing standing
+     * between the palette and grey-on-grey text in daylight.
+     */
+    val Ink = Color(0xFF112C00)
+
+    /** One step lifted from [Ink], for a surface that must read as raised without a border. */
+    val InkSoft = Color(0xFF1C4708)
+
+    /**
+     * Primary content on a [Leaf] fill. Measures 7.02:1.
+     *
+     * The rule this pair encodes: **anything sitting on [Leaf] must be dark.** Every surface that
+     * used to be an `Ink` fill with [OnInk] text is now a `Leaf` fill with `OnLeaf` text — the
+     * light-on-dark treatment inverted, because light on Leaf measures 1.96:1.
+     */
+    val OnLeaf = Ink
+
+    /**
+     * The logo's orange, `#F57C1F`, as the third brand colour.
+     *
+     * **It has exactly two legitimate grounds, and this is not a stylistic preference:**
+     *
+     * | Used | Ratio | |
+     * |---|---|---|
+     * | on [Paper] | **2.41:1** | fails text *and* the 3:1 non-text floor |
+     * | on [Leaf] | **1.25:1** | effectively invisible |
+     * | **on [Ink]** | **5.62:1** | passes |
+     * | **[Ink] on it** | **5.62:1** | passes |
+     *
+     * So: orange goes on dark green, or dark green goes on orange. Never on the paper background and
+     * never on the brand green — on Leaf it disappears, and on Paper it is below the floor even for a
+     * plain rule or icon.
+     *
+     * **It must also stay out of every status role.** Orange measures only **2.35:1 against
+     * [Approximate]**, the amber that means "this translation was fuzzy-matched". Anything orange in
+     * a provenance, badge or state position will be read as *approximate* by a teacher who has
+     * learned the amber, and §4.5's whole point is that provenance is never ambiguous. Orange is
+     * decoration and emphasis here; the three provenance hues remain the only colours that mean
+     * something.
+     */
+    val Ember = Color(0xFFF57C1F)
+
+    /**
+     * Secondary content on a [Leaf] fill. Measures 4.97:1 — it clears AA, but only just.
+     *
+     * Hierarchy is genuinely harder on a bright fill than on a dark one: the gap between this and
+     * [OnLeaf] is much narrower than between [OnInkMuted] and [OnInk], because everything legible on
+     * Leaf is crowded into the dark end. Anything softer than this fails, so this is the floor rather
+     * than a preference — do not lighten it to "balance" a layout.
+     */
+    val OnLeafMuted = Color(0xFF1C4708)
 
     /** Darkened from the supplied `#6B6B6B` for contrast margin. See the class docs. */
     val InkMuted = Color(0xFF5A5A5A)
@@ -138,9 +228,14 @@ object BolmitraColors {
  *
  * Every colour it is asked about is a neutral grey, which is the one simplification made: for
  * `r == g == b` the weighted sum `0.2126r + 0.7152g + 0.0722b` collapses to the single linearised
- * channel, because the weights sum to 1. The palette is monochrome by design (§6.13 — the only hues
+ * channel, because the weights sum to 1. ~~The palette is monochrome by design (§6.13 — the only hues
  * in the system are the three provenance colours, and those are never a card background), so the
- * general form would be dead code.
+ * general form would be dead code.~~
+ *
+ * **No longer true.** [BolmitraColors.Ink] is a deep green, and it *is* a card background — the
+ * active picker pill, the landing hero, every filled button. So [luminanceRgb] exists now. Backdrops
+ * and glass composites are still genuinely neutral, which is why the grey-only form is kept rather
+ * than deleted.
  */
 internal object Contrast {
 
@@ -151,15 +246,51 @@ internal object Contrast {
     }
 
     /** Contrast ratio between two opaque neutral greys. Order does not matter. */
-    fun ratio(a: Int, b: Int): Double {
-        val la = luminance(a)
-        val lb = luminance(b)
-        return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
-    }
+    fun ratio(a: Int, b: Int): Double = ratioOf(luminance(a), luminance(b))
+
+    /**
+     * WCAG relative luminance of an opaque colour, given 0..255 channels.
+     *
+     * The grey-only [luminance] above is no longer sufficient: [BolmitraColors.Ink] is a deep green,
+     * so the shortcut that "for a grey, luminance equals the luminance of any one channel" stops
+     * holding for the palette's most load-bearing colour. Kept alongside rather than replacing the
+     * grey form, because every backdrop and glass composite in the system genuinely is neutral.
+     */
+    fun luminanceRgb(r: Int, g: Int, b: Int): Double =
+        0.2126 * luminance(r) + 0.7152 * luminance(g) + 0.0722 * luminance(b)
+
+    /** As [luminanceRgb], from a packed `0xRRGGBB`. */
+    fun luminanceHex(rgb: Int): Double =
+        luminanceRgb((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+
+    /** Ratio between a packed `0xRRGGBB` colour and an opaque neutral grey. */
+    fun ratioHexToGrey(rgb: Int, grey: Int): Double =
+        ratioOf(luminanceHex(rgb), luminance(grey))
+
+    private fun ratioOf(la: Double, lb: Double): Double =
+        (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
 
     /** Source-over composite of white at [alpha] onto an opaque grey [backdrop]. */
     fun whiteOver(alpha: Float, backdrop: Int): Int =
         Math.round(alpha * 255f + (1f - alpha) * backdrop)
+
+    /**
+     * Source-over composite of white at [alpha] onto an opaque `0xRRGGBB` [backdrop].
+     *
+     * Per channel, because the starfield blobs are green now. Compositing a colour through the grey
+     * form would collapse it to one channel and report the wrong ground.
+     */
+    fun whiteOverRgb(alpha: Float, backdrop: Int): Int {
+        var out = 0
+        for (shift in intArrayOf(16, 8, 0)) {
+            val ch = (backdrop shr shift) and 0xFF
+            out = out or (whiteOver(alpha, ch) shl shift)
+        }
+        return out
+    }
+
+    /** Ratio between two packed `0xRRGGBB` colours. */
+    fun ratioHex(a: Int, b: Int): Double = ratioOf(luminanceHex(a), luminanceHex(b))
 }
 
 /**
@@ -192,21 +323,28 @@ internal object GlassAlpha {
      * The darkest grey text can sit on **where the ground is the silk backdrop**.
      *
      * Not the darkest in the app, which an earlier revision of this comment wrongly claimed. The
-     * landing screen's starfield blobs are `#0B0B0B`, and the glass nav bar crosses one — visibly
-     * so, which is the effect working. Glass over a blob composites to about `#8F`, far below this,
-     * and [BLOB] plus `GlassContrastTest` cover that case separately.
+     * landing screen's starfield blobs are [BolmitraColors.Ink] green, and the glass nav bar crosses
+     * one — visibly so, which is the effect working. Glass over a blob composites to about `#93A18A`,
+     * far below this, and [BLOB] plus `GlassContrastTest` cover that case separately.
      */
     fun worstCaseCardBackdrop(): Int = Contrast.whiteOver(BOTTOM, SilkFolds.darkestValue())
 
     /**
-     * `#0B0B0B`, the starfield blob fill — the darkest ground any glass in the app is laid over.
+     * The starfield blob fill as packed `0xRRGGBB` — the darkest ground any glass is laid over.
      *
-     * Text on glass over a blob has room for [BolmitraColors.Ink] and nothing else:
-     * [BolmitraColors.InkMuted] lands near 2.1:1 there, less than half the AA floor. That is why the
+     * Was the grey byte `0x0B` while the blobs were near-black. They are [BolmitraColors.Ink] green
+     * now, so this has to be a colour: compositing white over a green ground is a per-channel
+     * operation and the grey shortcut would have reported a ground far darker than the real one,
+     * making the nav-legibility test pass for the wrong reason.
+     *
+     * Text on glass over a blob still has room for [BolmitraColors.Ink] and nothing else:
+     * [BolmitraColors.InkMuted] lands near 2.5:1 there, well under the AA floor. That is why the
      * landing nav labels are `Ink`, and it is a real constraint on any future chrome placed over the
-     * collage rather than a stylistic preference.
+     * collage rather than a stylistic preference. The green ground is marginally *kinder* than the
+     * old black one (Ink rises from ~4.7:1 to ~5.5:1), so this change relaxed the constraint rather
+     * than tightening it.
      */
-    const val BLOB = 0x0B
+    const val BLOB = 0x112C00
 
     /** Contrast for [BolmitraColors.InkMuted] in the worst case the design permits. */
     fun worstCaseCardContrast(): Double =

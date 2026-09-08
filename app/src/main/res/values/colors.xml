@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Launcher-icon background.
+
+        White, matching the supplied artwork, which is drawn for a white ground: the navy book and
+        teal pages both rely on it for separation, and putting the emblem on the app's brand green
+        would drop the teal pages to about 1.4:1 against it and lose the book's shape entirely.
+
+        This is the adaptive icon's BACKGROUND layer, so it is what the launcher's mask shows around
+        the emblem. It is not a UI colour and nothing in Compose reads it.
+    -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

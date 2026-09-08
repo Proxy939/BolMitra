@@ -42,6 +42,25 @@ object DemoSeed {
     /** Flip to true only when a named native speaker has signed off on every string. */
     const val DEMO_STRINGS_VERIFIED = false
 
+    /**
+     * The one language these phrases are for. **Serving them for any other target is a safety bug.**
+     *
+     * Every `targetTextNative` below is a Mundari placeholder. `LiveTurnEngine` originally handed
+     * this list to the phrasebook regardless of the selected language, which meant choosing Santali
+     * and saying a seeded phrase returned a **Mundari** string tagged `Provenance.VERIFIED` — the
+     * app asserting native-speaker review of content in the wrong language entirely. That is worse
+     * than a machine translation, because the machine path at least labels itself.
+     *
+     * A phrasebook belongs to a *pack*, not to the app, so this is a stopgap until packs load per
+     * language (§6.8). Until then a language without a pack gets an empty T0 and falls through to
+     * T1, which is honest.
+     */
+    val LANGUAGE = org.bolmitra.speech.TargetLanguage.MUNDARI
+
+    /** Phrases for [language], or none when that language has no pack in this build. */
+    fun phrasesFor(language: org.bolmitra.speech.TargetLanguage): List<Phrase> =
+        if (language == LANGUAGE) phrases else emptyList()
+
     private var nextId = 1L
 
     private fun p(

@@ -108,7 +108,7 @@ fun DiagnosticsPane(spec: DeviceSpec, tier: DeviceTier, modifier: Modifier = Mod
             Text(
                 "Profile: ${tier.name.lowercase()}",
                 style = MaterialTheme.typography.titleLarge,
-                color = BolmitraColors.OnInk,
+                color = BolmitraColors.OnLeaf,
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -121,7 +121,7 @@ fun DiagnosticsPane(spec: DeviceSpec, tier: DeviceTier, modifier: Modifier = Mod
                             "and this tablet is roughly 3\u00D7 that."
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = BolmitraColors.OnInkMuted,
+                color = BolmitraColors.OnLeafMuted,
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -133,7 +133,7 @@ fun DiagnosticsPane(spec: DeviceSpec, tier: DeviceTier, modifier: Modifier = Mod
                         "measured before choosing (V56)."
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = BolmitraColors.OnInkMuted,
+                color = BolmitraColors.OnLeafMuted,
             )
         }
 

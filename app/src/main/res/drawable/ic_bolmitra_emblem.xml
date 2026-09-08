@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    BolMitra emblem — three figures rising from an open book.
+
+    A VECTOR, not the supplied PNG, and that is deliberate rather than a shortcut:
+
+      * A launcher icon is rasterised at eight densities from 48 dp to 192 dp. A single 1024x768
+        bitmap scaled into that either blurs or shows artefacts, and the request was for a logo that
+        "looks clear". A vector is resampled exactly at every density and at every zoom the launcher
+        applies.
+      * The supplied artwork is a 4:3 LOCKUP containing the wordmark and the "Speak - Learn - Grow"
+        tagline. At 48 dp that text is a few pixels tall and turns to mud. Icon guidance is to carry
+        the emblem alone and let the launcher render the app name as a label, which it already does
+        from android:label. So the wordmark is intentionally not here.
+      * Adaptive icons crop to a circle, squircle, rounded square or teardrop depending on the OEM.
+        Anything outside the inner 72x72 of this 108x108 canvas can be clipped, so the emblem is
+        drawn inside that safe zone rather than filling the frame.
+
+    Colours are sampled from the supplied logo: navy #1F2A5B, teal #149C7C, orange #F57C1F.
+
+    ponytail: the geometry is redrawn to match the supplied mark's composition, not traced from it,
+    so proportions are close but not identical. It is a clean, recognisable mark at every size, which
+    is what an icon needs. Upgrade path if exactness matters more than crispness: run the original
+    through a proper SVG trace and paste the resulting paths in here, keeping this viewport and the
+    safe-zone bounds. Do not swap in the PNG - see the reasons above.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Open book, navy. Two covers sweeping out from a centre spine. -->
+    <path
+        android:fillColor="#1F2A5B"
+        android:pathData="M22,57.5 C22,54.5 24.2,52.6 27.2,53.6 C40.5,57.8 49.4,65.9 53,78.2 L53,89 C46.6,80.6 35.8,73.6 24.8,70.4 C22.9,69.6 22,67.8 22,64.6 Z" />
+    <path
+        android:fillColor="#1F2A5B"
+        android:pathData="M86,57.5 C86,54.5 83.8,52.6 80.8,53.6 C67.5,57.8 58.6,65.9 55,78.2 L55,89 C61.4,80.6 72.2,73.6 83.2,70.4 C85.1,69.6 86,67.8 86,64.6 Z" />
+
+    <!-- The two outer figures' bodies, which double as the book's open pages. Teal. -->
+    <path
+        android:fillColor="#149C7C"
+        android:pathData="M52.6,77.5 C36.2,72.2 26.4,58.2 25.4,43.4 C25.2,41.2 26.6,40.1 28.6,41.0 C43.2,47.4 51.8,60.3 52.6,77.5 Z" />
+    <path
+        android:fillColor="#149C7C"
+        android:pathData="M55.4,77.5 C71.8,72.2 81.6,58.2 82.6,43.4 C82.8,41.2 81.4,40.1 79.4,41.0 C64.8,47.4 56.2,60.3 55.4,77.5 Z" />
+
+    <!-- Centre figure's body, orange, sitting between the pages. -->
+    <path
+        android:fillColor="#F57C1F"
+        android:pathData="M54,43.2 C59.2,43.2 63.2,47.2 63.2,52.4 L63.2,64.4 L54,74.6 L44.8,64.4 L44.8,52.4 C44.8,47.2 48.8,43.2 54,43.2 Z" />
+
+    <!-- Heads. Centre largest, as in the supplied mark. -->
+    <path
+        android:fillColor="#149C7C"
+        android:pathData="M34.6,30.4 A7.6,7.6 0 1,1 34.6,45.6 A7.6,7.6 0 1,1 34.6,30.4 Z" />
+    <path
+        android:fillColor="#F57C1F"
+        android:pathData="M73.4,30.4 A7.6,7.6 0 1,1 73.4,45.6 A7.6,7.6 0 1,1 73.4,30.4 Z" />
+    <path
+        android:fillColor="#F57C1F"
+        android:pathData="M54,17.6 A11.2,11.2 0 1,1 54,40.0 A11.2,11.2 0 1,1 54,17.6 Z" />
+</vector>
