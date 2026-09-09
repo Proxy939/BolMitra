@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.bolmitra.phrasebook.ClassroomPacks
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.phrasebook.SantaliGlossary
@@ -97,11 +98,18 @@ class LiveTurnEngine private constructor(
      * which labels itself `MACHINE`.
      */
     private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(
-        // Seeded rows first, glossary second, and the order is load-bearing: PhraseMatcher's exact
-        // rung takes the FIRST match, so a hand-seeded VERIFIED row always beats a CORPUS row with
-        // the same Hindi. Reviewed content outranks quoted content, which is the whole point of the
-        // provenance ladder.
-        DemoSeed.phrasesFor(language) + SantaliGlossary.phrasesFor(context, language),
+        // Seeded rows first, glossary second, supplied packs last, and the order is load-bearing:
+        // PhraseMatcher's exact rung takes the FIRST match, so a hand-seeded VERIFIED row always
+        // beats a CORPUS row with the same Hindi, and a CORPUS row always beats an unreviewed
+        // supplied one. Reviewed content outranks quoted content outranks unreviewed content, which
+        // is the whole point of the provenance ladder.
+        //
+        // The third source is not hypothetical about this: `ClassroomPacks` disagrees with the
+        // corpus on 10 normalised keys including `बैठ जाओ` and `खड़े हो जाओ`, the two Revision 27
+        // established. Appending it last is what keeps ᱫᱩᱨᱩᱵ and ᱛᱮᱜᱚ on air.
+        DemoSeed.phrasesFor(language) +
+            SantaliGlossary.phrasesFor(context, language) +
+            ClassroomPacks.phrasesFor(context, language),
     )
 
     /** Resolves a pack ref back to the phrase text, for [RenderingAudioPlayer]. */

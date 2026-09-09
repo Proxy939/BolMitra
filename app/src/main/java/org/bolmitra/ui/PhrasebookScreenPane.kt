@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.bolmitra.phrasebook.ClassroomPacks
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.phrasebook.PhrasebookBrowser
@@ -122,8 +123,11 @@ fun PhrasebookScreenPane(
     /** T0 lookup for playback only. Same construction LiveTurnEngine uses, so the same rows match. */
     val phrasebook = remember(selectedLang, allRows) {
         InMemoryPhrasebook(
+            // Same order as LiveTurnEngine, and for the same reason: the exact rung takes the first
+            // match, so this pane must not resolve a phrase differently from the live path.
             DemoSeed.phrasesFor(selectedLang) +
-                SantaliGlossary.phrasesFor(context, selectedLang),
+                SantaliGlossary.phrasesFor(context, selectedLang) +
+                ClassroomPacks.phrasesFor(context, selectedLang),
         )
     }
 

@@ -473,3 +473,34 @@ lychee	लीची
 Mutton	मटन
 Vegetables	सब्ज़ियाँ
 Comfit	इलायची दाना
+# --- Greetings and courtesies ------------------------------------------------------------
+# Added after a teacher typed नमस्ते and got machine output with a MACHINE marker. The Santali
+# was never the problem: GATITOS already carries Hello, Hi and greetings as ᱡᱚᱦᱟᱨ
+# (johar), the ordinary Santali greeting. Those rows simply had no Hindi key, so the T0 exact
+# rung could not reach them and the turn fell through to T1, which guessed.
+#
+# Nothing below touches a Santali string. Each line attaches Hindi a teacher would actually say
+# to a row whose target text is already verbatim corpus text at Provenance.CORPUS.
+#
+# greeting (singular) is deliberately NOT keyed: its corpus value is ᱡᱦᱟᱨ (jhar), missing the
+# ᱚ, and keying a defective row would put the defect in front of a class. greetings and
+# Hello both carry the correct ᱡᱚᱦᱟᱨ, so the reachable rows are the right ones.
+hello	नमस्ते
+hello	नमस्कार
+hello	प्रणाम
+hello	जोहार
+greetings	सभी को नमस्ते
+welcome	स्वागत
+welcome	स्वागत है
+good morning	सुप्रभात
+good evening	शुभ संध्या
+good night	शुभ रात्रि
+goodbye	अलविदा
+bye	फिर मिलेंगे
+thanks	शुक्रिया
+# NOT keyed, and the reason is worth recording. How are you. -> ᱟᱢ ᱪᱮᱞᱠᱟ ᱢᱮᱱᱟᱢᱟ? is a genuine
+# Hembram sentence and exactly what the teacher typed, but its target ends in an ASCII question
+# mark, and the ingest gate rejects any Hindi-reachable row carrying punctuation the voice would
+# read aloud. The builder repairs ASCII periods to U+1C79; there is no equivalent rule for ?,
+# and choosing one is a decision about Ol Chiki punctuation (U+1C7E MUCAAD and friends) that
+# should be made deliberately rather than to unblock one key. Left unreachable on purpose.

@@ -1022,7 +1022,12 @@ fun LiveClassPane(
                             // Suggesting them would have walked a teacher straight onto the weakest
                             // path in the app. बैठ जाओ and खड़े हो जाओ replace them because they
                             // resolve to attested corpus content, ᱫᱩᱨᱩᱵ and ᱛᱮᱜᱚ.
-                            listOf("बैठ जाओ", "खड़े हो जाओ", "सुनो ध्यान से", "फिर से बोलो", "अब लिखो").forEach { phrase ->
+                            // नमस्ते leads, because greeting the class is the first thing a teacher
+                            // says and it was the first thing tried in the field — where it missed
+                            // T0 and came back as machine output. It now resolves to ᱡᱚᱦᱟᱨ (johar)
+                            // from GATITOS, so the most likely opening utterance lands on the
+                            // strongest path rather than the weakest.
+                            listOf("नमस्ते", "बैठ जाओ", "खड़े हो जाओ", "सुनो ध्यान से", "फिर से बोलो", "अब लिखो").forEach { phrase ->
                                 Box(
                                     modifier = Modifier
                                         .background(Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
@@ -1329,7 +1334,15 @@ private fun AudioPlayer.replay(outcome: TurnOutcome): Boolean = when (outcome) {
  */
 private fun DegradeReason.explain(): String = when (this) {
     DegradeReason.NO_SPEECH_RECOGNISED -> "Nothing was recognised — speak a little louder"
-    DegradeReason.NO_TRANSLATION_AVAILABLE -> "No translation model for this language on this tablet"
+    // Two different situations reach this rung and the old wording fitted neither well. For
+    // Santali it means T0 missed *and* the MT model could not answer; for Mundari and Ho it means
+    // no MT model exists at all and none is coming — they are absent from IndicTrans2 and
+    // NLLB-200 for not being scheduled languages (V11), so "on this tablet" wrongly implied a
+    // pack would fix it. What is true in both cases is that the phrasebook is the way through,
+    // and that is on this screen, so the message names it.
+    DegradeReason.NO_TRANSLATION_AVAILABLE ->
+        "Not in the phrasebook, and no translation model for this language — " +
+            "try a Quick Phrase below"
     DegradeReason.BUDGET_EXHAUSTED -> "Took too long — try a shorter sentence"
     DegradeReason.SYNTHESIS_FAILED -> "Translated, but the voice could not speak it"
     DegradeReason.AUDIO_ASSET_MISSING -> "Verified phrase found, but its audio is missing"

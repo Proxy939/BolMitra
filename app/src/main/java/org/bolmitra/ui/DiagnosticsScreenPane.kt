@@ -56,6 +56,7 @@ import org.bolmitra.curriculum.WorksheetAssembler
 import org.bolmitra.data.TurnRecorder
 import org.bolmitra.device.DeviceSpec
 import org.bolmitra.device.DeviceTier
+import org.bolmitra.phrasebook.ClassroomPacks
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.phrasebook.SantaliGlossary
@@ -297,7 +298,8 @@ fun DiagnosticsScreenPane(
                 "pb" -> {
                     // Counted, not asserted. The old text was the literal "11 sample phrases".
                     val seeded = DemoSeed.phrasesFor(selectedLang).size
-                    val corpus = SantaliGlossary.phrasesFor(context, selectedLang).size
+                    val corpus = SantaliGlossary.phrasesFor(context, selectedLang).size +
+                        ClassroomPacks.size(context, selectedLang)
                     val total = seeded + corpus
                     if (total == 0) {
                         CheckState.NotApplicable(
@@ -801,7 +803,8 @@ fun DiagnosticsScreenPane(
                         // Every one of these four was a literal: "11 / 11", "1,240", "56", "320".
                         ContentPackStatRow("Model files", "$presentCount / ${inv.size}", presentCount == inv.size)
                         val seeded = DemoSeed.phrasesFor(selectedLang).size
-                        val corpus = SantaliGlossary.phrasesFor(context, selectedLang).size
+                        val corpus = SantaliGlossary.phrasesFor(context, selectedLang).size +
+                            ClassroomPacks.size(context, selectedLang)
                         ContentPackStatRow(
                             "Phrasebook rows (${selectedLang.englishName})",
                             "${seeded + corpus}",

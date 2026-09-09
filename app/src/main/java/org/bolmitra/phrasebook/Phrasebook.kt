@@ -38,7 +38,20 @@ enum class Provenance {
     /** Fuzzy phrasebook match above threshold. Usable, but the teacher should judge. */
     APPROXIMATE,
 
-    /** Neural output from T1. No human has seen this string. */
+    /**
+     * **No human has reviewed this string for this classroom.**
+     *
+     * Two things arrive here. Neural output from T1 is the original case. The second is a bulk
+     * translation supplied to the project with no named speaker behind it and no corpus to cite —
+     * `ClassroomPacks` is exactly that, and it serves here rather than at [CORPUS] because there is
+     * nothing to put in `src` that a reviewer could go and check, or at [VERIFIED] because that
+     * would assert a review nobody has done.
+     *
+     * The wording of this comment used to be "neural output from T1", which made the level sound
+     * like a property of the *pipeline*. It is a property of the *evidence*: the operative claim is
+     * that no human has vouched for the string, however it got here. `src` still travels with the
+     * row so its origin is traceable even when it is not citable.
+     */
     MACHINE,
 }
 

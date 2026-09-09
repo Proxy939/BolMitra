@@ -109,6 +109,80 @@ class SantaliGlossaryTest {
     }
 
     /**
+     * A teacher's first word must reach the corpus rather than the model.
+     *
+     * `नमस्ते` used to return machine output carrying a `MACHINE` marker, and the Santali was never
+     * the problem: GATITOS already held `Hello` as ᱡᱚᱦᱟᱨ (johar), the ordinary Santali greeting,
+     * with **no Hindi key**, so the T0 exact rung could not see it and the turn fell through to T1.
+     * The fix was a Hindi key, not a translation.
+     *
+     * Pinned because the asset is a build artifact: a future run of the builder with the keys file
+     * mis-edited would put a guess back in front of a class, silently and with a marker that admits
+     * it only after the class has already heard it.
+     */
+    @Test
+    fun `namaste reaches the corpus greeting rather than the model`() {
+        val hello = byEn("Hello")
+        assertNotNull("'Hello' missing from the glossary", hello)
+        // U+1C61 U+1C5A U+1C66 U+1C5F U+1C68 — johar.
+        assertEquals("\u1C61\u1C5A\u1C66\u1C5F\u1C68", hello!!.sat)
+        assertTrue("नमस्ते is not a lookup key for the greeting", "नमस्ते" in hello.hiKeys)
+        assertTrue("नमस्कार is not a lookup key", "नमस्कार" in hello.hiKeys)
+
+        // Reaching it must be an EXACT hit, so the row arrives at CORPUS and not downgraded.
+        val phrases = toPhrases(hello, 9_000)
+        val book = InMemoryPhrasebook(phrases)
+        val hit = book.lookup(HindiNormalizer.normalize("नमस्ते"))
+        assertNotNull("नमस्ते does not resolve in the phrasebook", hit)
+        assertEquals("\u1C61\u1C5A\u1C66\u1C5F\u1C68", hit!!.phrase.targetTextNative)
+        assertEquals(Provenance.CORPUS, hit.provenance)
+    }
+
+    @Test
+    fun `the defective singular greeting row is never reachable`() {
+        // GATITOS spells the singular `greeting` as ᱡᱦᱟᱨ (jhar) — the ᱚ is missing — while `Hello`
+        // and `greetings` both carry the correct ᱡᱚᱦᱟᱨ. Keying the broken row would put the defect
+        // in a classroom, so it must stay unreachable from Hindi.
+        byEn("greeting")?.let {
+            assertTrue(
+                "the misspelt 'greeting' row (jhar) must not carry a Hindi key",
+                it.hi.isBlank(),
+            )
+        }
+    }
+
+    @Test
+    fun `classroom courtesies resolve to corpus text`() {
+        // The words a teacher reaches for straight after नमस्ते. Each was already in the corpus and
+        // only needed a Hindi key; none of these Santali strings was authored here.
+        val expected = mapOf(
+            "welcome" to "\u1C6B\u1C5F\u1C68\u1C5F\u1C62",                     // daram
+            "greetings" to "\u1C61\u1C5A\u1C66\u1C5F\u1C68",                   // johar
+        )
+        expected.forEach { (en, sat) ->
+            val row = byEn(en)
+            assertNotNull("'$en' missing from the glossary", row)
+            assertEquals("'$en' target changed", sat, row!!.sat)
+            assertTrue("'$en' has no Hindi key", row.hi.isNotBlank())
+        }
+    }
+
+    @Test
+    fun `the how-are-you sentence stays unreachable while its punctuation is unresolved`() {
+        // ᱟᱢ ᱪᱮᱞᱠᱟ ᱢᱮᱱᱟᱢᱟ? is real Hembram text and exactly what the teacher typed, but it ends in
+        // an ASCII question mark that the voice would read aloud — `no Hindi-reachable target
+        // carries list punctuation` catches it, which is the guard doing its job. Keying it needs a
+        // punctuation rule for Ol Chiki first, so this records the decision rather than leaving the
+        // next person to rediscover the failure.
+        byEn("How are you.")?.let {
+            assertTrue(
+                "keying this row needs its trailing '?' resolved first",
+                it.hi.isBlank(),
+            )
+        }
+    }
+
+    /**
      * The GATITOS numeral defect must not have survived ingest.
      *
      * GATITOS publishes one string for six, seven AND eight. This app teaches counting, so the
