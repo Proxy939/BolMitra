@@ -12,18 +12,22 @@ private const val TAG = "BolMitra/capture"
 /**
  * Push-to-talk microphone capture — pipeline stage 1, previously absent.
  *
- * ### Why push-to-talk, and why that removes the need for a VAD
+ * ### The session is now a toggle, and that changed the VAD argument
  *
- * The teacher holds a button while speaking and releases when done, so the end of the utterance
- * is known from the UI rather than inferred from the signal. [SherpaStreamingAsr.transcribe] is
- * already written for exactly this — "Push-to-talk means the caller already knows where the
- * utterance ends, so endpointing is not used here" — so the Silero VAD model, which is on device
- * but was never loaded, stays unused. That is a deliberate omission: a VAD earns its keep for
- * hands-free capture, and adding one here would mean tuning a threshold against classroom noise
- * to solve a problem a button already solves.
+ * This class originally documented "why push-to-talk removes the need for a VAD": the teacher held
+ * a button, so the end of the utterance was known from the UI rather than inferred from the signal.
+ * **The mic is now tap-to-start / tap-to-stop**, because a fixed window cut teachers off
+ * mid-sentence, so within one session the utterance boundaries have to come from somewhere.
  *
- * It is also the right interaction for the room. Thirty children are audible the whole lesson; a
- * hands-free mic would try to translate them.
+ * They come from [lastChunkRms] and an adaptive threshold in the caller, not from a VAD model. The
+ * Silero VAD staged at `ModelStore.vadModel` is still unloaded, and still deliberately so: an
+ * energy gate is ~20 lines with a graceful failure mode, whereas sherpa-onnx calls `exit(-1)` on a
+ * malformed artifact (V67) and that model has never been exercised on device.
+ *
+ * What has NOT changed is the reason the mic must not be open during playback. Thirty children are
+ * audible the whole lesson, and the tablet's own translation is the loudest thing in the room — so
+ * the caller stops capture for the duration of each turn rather than filtering its own voice back
+ * out. `VOICE_RECOGNITION` below asks for AEC, but AEC is not a licence to listen to yourself.
  *
  * ### Format is fixed by the model, not chosen
  *
@@ -51,6 +55,18 @@ class AudioCapture {
     val isRecording: Boolean get() = record != null
 
     /**
+     * Root-mean-square amplitude of the most recent [drain], normalised to 0..1. Zero before the
+     * first read.
+     *
+     * Exposed so a caller can find the gap between two sentences without a VAD model. One [drain]
+     * is a 2048-sample read, i.e. **128 ms at 16 kHz**, which is already the right window for that
+     * decision — short enough to catch a pause, long enough not to trip on a single glottal stop.
+     */
+    @Volatile
+    var lastChunkRms: Float = 0f
+        private set
+
+    /**
      * Opens the mic and begins buffering.
      *
      * @throws IllegalStateException if `RECORD_AUDIO` is not held, or the device gave us an
@@ -62,6 +78,9 @@ class AudioCapture {
     fun start() {
         if (isRecording) return
         chunks.clear()
+        // Stale level from the previous utterance would otherwise be read as speech on the first
+        // loop iteration, before any sample of the new one has arrived.
+        lastChunkRms = 0f
 
         val minBuffer = AudioRecord.getMinBufferSize(
             sampleRate,
@@ -117,7 +136,24 @@ class AudioCapture {
             return 0
         }
         chunks += buf.copyOf(n)
+        lastChunkRms = rms(buf, n)
         return n
+    }
+
+    /**
+     * RMS over [n] samples, normalised by [Short.MAX_VALUE].
+     *
+     * Accumulates in `Double`, not `Float`: 2048 squared 16-bit samples reach ~4.4e9, which
+     * overflows `Int` and loses precision in `Float` well before the end of the window.
+     */
+    private fun rms(buf: ShortArray, n: Int): Float {
+        if (n <= 0) return 0f
+        var sum = 0.0
+        for (i in 0 until n) {
+            val s = buf[i].toDouble()
+            sum += s * s
+        }
+        return (kotlin.math.sqrt(sum / n) / Short.MAX_VALUE).toFloat()
     }
 
     /**

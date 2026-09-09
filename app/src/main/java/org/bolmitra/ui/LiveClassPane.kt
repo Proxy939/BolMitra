@@ -56,7 +56,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.DemoSeed
@@ -64,11 +71,78 @@ import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.speech.AudioCapture
 import org.bolmitra.speech.LiveTurnEngine
 import org.bolmitra.speech.TargetLanguage
+import org.bolmitra.speech.UtteranceSegmenter
 import org.bolmitra.ui.common.ConcentricCircleButton
 import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.common.SoundwaveVisualizer
 
-private const val LISTEN_WINDOW_MS = 4000L
+/**
+ * Mic session tuning. The mic is a TOGGLE — one tap opens it, the next closes it — and inside a
+ * session each pause in speech ends one utterance and starts one translation.
+ *
+ * The old behaviour was a single fixed 4 s window per tap, which cut teachers off mid-sentence and
+ * allowed exactly one translation per tap.
+ *
+ * `ponytail:` These are an energy gate, not a voice activity detector. Ceiling: a room with
+ * continuous chatter *above* the adaptive floor never falls silent, so utterances end at
+ * [MAX_UTTERANCE_MS] instead of at the teacher's pause — longer segments, still correct, just less
+ * responsive. Upgrade path: the Silero VAD already staged at `ModelStore.vadModel`, which
+ * `ModelStore.hasVad()` can already report on and which nothing loads yet.
+ */
+private const val SILENCE_HOLD_MS = 800L
+
+/**
+ * Forced cut when no pause arrives. Bounds one utterance's buffer at ~224 KB.
+ *
+ * Sized against [MAX_SESSION_MS] rather than chosen in isolation. Measured on the tablet, a
+ * classroom's ambient level can sit above the gate continuously, so silence never registers and
+ * *every* cut is this limit. At 15 s — the value this started at — a 15 s session would produce
+ * exactly one translation, arriving as the mic closed. At 7 s the same room gives two, and 7 s is
+ * still longer than any single classroom instruction, so a teacher who pauses normally is cut by
+ * silence long before reaching it.
+ */
+private const val MAX_UTTERANCE_MS = 7_000L
+
+/**
+ * The mic closes itself after this long, even untouched.
+ *
+ * A backstop as well as a limit: an open mic left running is the one state that keeps transcribing a
+ * room full of children, so a tablet put down mid-lesson must not do that indefinitely.
+ *
+ * Enforced as a **deadline the in-flight utterance also respects**, not just a check between
+ * utterances. Bounding only the loop head would let an utterance that began at 14 s run to 22 s,
+ * which is not what "closes after 15 seconds" means.
+ */
+private const val MAX_SESSION_MS = 15_000L
+
+/**
+ * Leading audio used to measure the room rather than the teacher.
+ *
+ * A fixed dB threshold is the classic way to get this wrong: it works in a quiet office and fails
+ * in a classroom with a fan. Averaging the first few reads and gating relative to that adapts to
+ * the room the tablet is actually in.
+ */
+private const val NOISE_CALIBRATION_MS = 400L
+
+/** Speech must exceed the measured noise floor by this factor. */
+private const val SPEECH_OVER_NOISE = 2.5f
+
+/**
+ * Absolute floor, so a silent room cannot make the gate arbitrarily sensitive.
+ *
+ * With a near-zero measured floor, `floor * 2.5` is also near zero and every sample counts as
+ * speech, which would end an utterance only at [MAX_UTTERANCE_MS].
+ */
+private const val MIN_SPEECH_RMS = 0.012f
+
+/** Consecutive failed reads before a session gives up rather than spinning on a dead mic. */
+private const val MAX_DEAD_READS = 40
+
+/** `mm:ss` for the session readout. Minutes are not clamped to two digits; the cap is 30. */
+internal fun formatMmSs(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    return "%02d:%02d".format(total / 60, total % 60)
+}
 
 enum class TurnPhase { IDLE, LOADING, LISTENING, THINKING }
 
@@ -107,6 +181,24 @@ fun LiveClassPane(
     var error by remember { mutableStateOf<String?>(null) }
     var speakingAudio by remember { mutableStateOf(false) }
 
+    /**
+     * Whether the mic session is open. Distinct from [phase], which cycles
+     * LISTENING -> THINKING -> LISTENING many times inside one session — the button must read "stop"
+     * for all of it, including while a translation is being spoken.
+     */
+    var sessionActive by remember { mutableStateOf(false) }
+
+    /**
+     * Graceful stop signal, read from the capture loop on [Dispatchers.Default].
+     *
+     * An `AtomicBoolean` rather than Compose state because it is written from the UI thread and read
+     * from a background loop, and rather than cancelling the job because a stop should let the
+     * sentence in flight finish and be translated.
+     */
+    val stopRequested = remember { AtomicBoolean(false) }
+
+    var sessionElapsedMs by remember { mutableStateOf(0L) }
+
     var inputTab by remember { mutableStateOf(0) } // 0: Type & Translate, 1: Quick Phrases
     var typedHindi by remember { mutableStateOf("") }
     var historyTab by remember { mutableStateOf(0) } // 0: History, 1: Recordings
@@ -130,38 +222,148 @@ fun LiveClassPane(
         phase = TurnPhase.IDLE
     }
 
+    // Drives the mm:ss readout. Keyed on sessionActive so it does not tick when the mic is closed;
+    // it is a display concern only and never a source of truth for when the session ends.
+    LaunchedEffect(sessionActive) {
+        if (!sessionActive) {
+            sessionElapsedMs = 0L
+            return@LaunchedEffect
+        }
+        val start = SystemClock.elapsedRealtime()
+        while (true) {
+            sessionElapsedMs = SystemClock.elapsedRealtime() - start
+            delay(500)
+        }
+    }
+
     val canSpeak = micGranted && loadState is LiveTurnEngine.LoadState.Ready
 
-    fun runTurn() {
-        if (!canSpeak || phase != TurnPhase.IDLE) return
+    /**
+     * Captures one utterance and returns it, ending at the teacher's pause.
+     *
+     * Runs on [Dispatchers.Default]; `AudioRecord.read` blocks for ~128 ms per call, which is what
+     * paces this loop rather than a `delay`. That blocking read is also why cancellation is checked
+     * every iteration instead of relied upon: a blocked read cannot be interrupted, so the worst
+     * case for noticing a cancelled session is one read.
+     *
+     * Returns null when nothing usable was heard — [AudioCapture.stop]'s 100 ms floor — which is the
+     * normal result when the teacher stops the session without saying anything.
+     */
+    suspend fun captureUtterance(
+        capture: AudioCapture,
+        stopRequested: AtomicBoolean,
+        /**
+         * Absolute clock at which the session ends. Cutting here rather than only between utterances
+         * is what makes [MAX_SESSION_MS] a real bound: whatever has been said so far is still
+         * returned and still translated, so the cap costs the teacher nothing they already said.
+         */
+        sessionDeadlineMs: Long,
+    ): ShortArray? {
+        val segmenter = UtteranceSegmenter(
+            calibrationMs = NOISE_CALIBRATION_MS,
+            speechOverNoise = SPEECH_OVER_NOISE,
+            minSpeechRms = MIN_SPEECH_RMS,
+            silenceHoldMs = SILENCE_HOLD_MS,
+            maxUtteranceMs = MAX_UTTERANCE_MS,
+        )
+        capture.start()
+        val started = SystemClock.elapsedRealtime()
+        var deadReads = 0
+
+        while (true) {
+            // Cooperative cancellation. Without this the loop is unbounded, and a cancelled scope
+            // (navigating away, rotation) would leave AudioRecord holding the mic for the life of
+            // the process. The old fixed window hid this by always terminating on its own.
+            // `AudioRecord.read` blocks and cannot be interrupted, so the worst case for noticing a
+            // cancellation is one read, ~128 ms.
+            currentCoroutineContext().ensureActive()
+            if (stopRequested.get()) break
+            if (SystemClock.elapsedRealtime() >= sessionDeadlineMs) break
+
+            if (capture.drain() == 0) {
+                // A dead mic returns immediately instead of blocking, which would spin this loop.
+                if (++deadReads >= MAX_DEAD_READS) break
+                continue
+            }
+            deadReads = 0
+
+            val elapsed = SystemClock.elapsedRealtime() - started
+            if (segmenter.feed(capture.lastChunkRms, elapsed) != UtteranceSegmenter.Decision.CONTINUE) {
+                break
+            }
+        }
+        return capture.stop()
+    }
+
+    /**
+     * Starts the mic session, or asks a running one to stop.
+     *
+     * Tap once and the mic stays open, translating each sentence as the teacher pauses, until it is
+     * tapped again. Stopping is a *request*, not a cancellation: the sentence already being spoken
+     * finishes and gets translated, because throwing away words the teacher just said in order to
+     * honour a tap 200 ms sooner is the wrong trade in front of a class.
+     */
+    fun toggleMic() {
+        if (!canSpeak) return
+
+        if (sessionActive) {
+            stopRequested.set(true)
+            return
+        }
+
+        stopRequested.set(false)
         error = null
         result = null
+        sessionActive = true
+
         scope.launch {
             val capture = AudioCapture()
+            val sessionDeadline = SystemClock.elapsedRealtime() + MAX_SESSION_MS
             try {
-                phase = TurnPhase.LISTENING
-                withContext(Dispatchers.Default) {
-                    capture.start()
-                    val deadline = SystemClock.elapsedRealtime() + LISTEN_WINDOW_MS
-                    while (SystemClock.elapsedRealtime() < deadline) {
-                        capture.drain()
-                    }
-                }
-                val pcm = capture.stop()
-                val turnStart = SystemClock.elapsedRealtime()
+                while (isActive && !stopRequested.get()) {
+                    if (SystemClock.elapsedRealtime() >= sessionDeadline) break
 
-                if (pcm == null) {
-                    error = "Nothing audible was captured. Hold the tablet closer and speak up."
-                    phase = TurnPhase.IDLE
-                    return@launch
+                    phase = TurnPhase.LISTENING
+                    val pcm = withContext(Dispatchers.Default) {
+                        captureUtterance(capture, stopRequested, sessionDeadline)
+                    }
+                    if (pcm == null) {
+                        // Under the 100 ms floor. If the teacher asked to stop this is simply the
+                        // end of the session; otherwise the mic is not delivering audio and looping
+                        // would spin start/stop forever.
+                        if (!stopRequested.get()) {
+                            error = "Nothing audible was captured. Hold the tablet closer and " +
+                                "speak up."
+                        }
+                        break
+                    }
+
+                    // END OF SPEECH, not session start. The 3 s R3 deadline is measured from here,
+                    // and an open mic makes this load-bearing in a way the fixed window did not: a
+                    // timestamp taken when the teacher tapped would put every utterance after the
+                    // third second of the lesson straight into BUDGET_EXHAUSTED.
+                    val turnStart = SystemClock.elapsedRealtime()
+
+                    phase = TurnPhase.THINKING
+                    // The mic is closed for the whole of this call, which is what keeps the tablet
+                    // from hearing its own translation and translating it back. runTurn plays the
+                    // audio synchronously, so returning from it means the room is quiet again.
+                    result = engine.runTurn(pcm, turnStart)
                 }
-                phase = TurnPhase.THINKING
-                val turnResult = engine.runTurn(pcm, turnStart)
-                result = turnResult
+            } catch (e: CancellationException) {
+                // Rethrown, never turned into `error`: the composition is going away, so there is
+                // no UI left to show a message in, and swallowing it breaks structured concurrency.
+                throw e
             } catch (e: Throwable) {
+                // Swallowed on purpose. This runs in a composition scope with no exception handler,
+                // so rethrowing a mic failure would take the process down in front of a class.
                 error = e.message ?: e::class.java.simpleName
-                runCatching { capture.stop() }
             } finally {
+                // NonCancellable: this runs on the cancellation path too, and releasing the mic is
+                // the one thing that must happen even then.
+                withContext(NonCancellable) { runCatching { capture.stop() } }
+                sessionActive = false
+                stopRequested.set(false)
                 phase = TurnPhase.IDLE
             }
         }
@@ -423,11 +625,22 @@ fun LiveClassPane(
                                 Spacer(Modifier.width(8.dp))
 
                                 ConcentricCircleButton(
-                                    icon = BolMitraIcons.Mic,
+                                    // Shape carries the state, not just the pulse: a stop square
+                                    // while the session is open, a mic when it is closed.
+                                    icon = if (sessionActive) {
+                                        BolMitraIcons.Stop
+                                    } else {
+                                        BolMitraIcons.Mic
+                                    },
                                     primaryColor = Color(0xFFF97316),
                                     isPulsing = phase == TurnPhase.LISTENING,
-                                    onClick = ::runTurn,
+                                    onClick = ::toggleMic,
                                     modifier = Modifier.size(92.dp),
+                                    contentDescription = if (sessionActive) {
+                                        "Stop listening and translate now"
+                                    } else {
+                                        "Start listening"
+                                    },
                                 )
 
                                 Spacer(Modifier.width(8.dp))
@@ -442,9 +655,14 @@ fun LiveClassPane(
                             Spacer(Modifier.height(12.dp))
 
                             Text(
-                                text = when (phase) {
-                                    TurnPhase.LISTENING -> "Listening..."
-                                    TurnPhase.THINKING -> "Translating..."
+                                // The label has to say that stopping TRANSLATES, not merely that it
+                                // stops. Tapping has always cut the sentence short and translated it
+                                // straight away, but a button that only promises to "stop" reads
+                                // like it will throw the sentence away — so a teacher who had
+                                // finished speaking waited for the timer instead of tapping.
+                                text = when {
+                                    phase == TurnPhase.THINKING -> "Translating..."
+                                    sessionActive -> "Listening — tap to translate now"
                                     else -> "Tap to speak"
                                 },
                                 style = MaterialTheme.typography.titleMedium.copy(
@@ -454,7 +672,12 @@ fun LiveClassPane(
                                 ),
                             )
                             Text(
-                                text = "हिंदी में बोलिए",
+                                text = if (sessionActive) {
+                                    // "Finished speaking? Press — it will translate immediately."
+                                    "बोलकर पूरा हो गया? दबाएँ — तुरंत अनुवाद होगा"
+                                } else {
+                                    "हिंदी में बोलिए"
+                                },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 12.sp,
                                     color = Color(0xFF64748B),
@@ -464,7 +687,15 @@ fun LiveClassPane(
                             Spacer(Modifier.height(8.dp))
 
                             Text(
-                                text = "00:00 / 30:00",
+                                // Was a hardcoded "00:00 / 30:00" that never moved and described
+                                // nothing. The mic now stays open until tapped, so a teacher needs
+                                // to see both that it is still recording and how long is left
+                                // before it closes itself — and the right-hand number is the real
+                                // MAX_SESSION_MS rather than decoration.
+                                text = "%s / %s".format(
+                                    formatMmSs(sessionElapsedMs),
+                                    formatMmSs(MAX_SESSION_MS),
+                                ),
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontSize = 11.sp,
                                     color = Color(0xFF94A3B8),

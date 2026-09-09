@@ -40,6 +40,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +80,36 @@ object BolMitraIcons {
                 lineTo(13f, 17.72f)
                 curveTo(16.28f, 17.23f, 19f, 14.41f, 19f, 11f)
                 lineTo(17.3f, 11f)
+                close()
+            }
+        }.build()
+    }
+
+    /**
+     * Filled rounded square — the universal "tap again to stop" affordance.
+     *
+     * The mic button is a toggle, and §4.5's rule that colour is never the only signal applies to
+     * state as much as to provenance: a teacher glancing at the tablet mid-lesson must be able to
+     * tell "recording" from "idle" by shape, not by noticing an orange ring pulsing.
+     */
+    val Stop: ImageVector by lazy {
+        ImageVector.Builder(
+            name = "Stop",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).apply {
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(8f, 6f)
+                lineTo(16f, 6f)
+                curveTo(17.1f, 6f, 18f, 6.9f, 18f, 8f)
+                lineTo(18f, 16f)
+                curveTo(18f, 17.1f, 17.1f, 18f, 16f, 18f)
+                lineTo(8f, 18f)
+                curveTo(6.9f, 18f, 6f, 17.1f, 6f, 16f)
+                lineTo(6f, 8f)
+                curveTo(6f, 6.9f, 6.9f, 6f, 8f, 6f)
                 close()
             }
         }.build()
@@ -399,6 +432,12 @@ fun ConcentricCircleButton(
     isPulsing: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier.size(100.dp),
+    /**
+     * Spoken label for the action. Required for the mic because it is a toggle: without it
+     * TalkBack announces an unlabelled button and gives no way to know whether tapping starts or
+     * stops recording.
+     */
+    contentDescription: String? = null,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseAlpha by infiniteTransition.animateFloat(
@@ -413,7 +452,11 @@ fun ConcentricCircleButton(
 
     Box(
         modifier = modifier
-            .clickable(onClick = onClick),
+            .semantics { role = Role.Button }
+            .clickable(
+                onClickLabel = contentDescription,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // Outer concentric ring 2
@@ -443,7 +486,7 @@ fun ConcentricCircleButton(
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = null,
+                contentDescription = contentDescription,
                 tint = Color.White,
                 modifier = Modifier.size(28.dp),
             )
