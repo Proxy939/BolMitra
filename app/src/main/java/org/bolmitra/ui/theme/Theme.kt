@@ -213,6 +213,16 @@ object BolmitraColors {
     // that must never be missed is the only one with colour. Each is still paired with a word and
     // a distinct shape, because colour alone fails for a colour-blind teacher.
     val Verified = Color(0xFF1B5E20)
+
+    /**
+     * Published corpus, no speaker review. A deliberately *cool* hue, because the warm ones are
+     * already spoken for and a teacher has learned what green and amber mean here.
+     *
+     * White on this measures ~8.9:1, well clear of the 4.5:1 floor. It must never be confused with
+     * [Approximate] — they are different claims: this one says "a human wrote it, for a different
+     * purpose", the amber says "our matcher was not sure".
+     */
+    val Corpus = Color(0xFF17456B)
     val Approximate = Color(0xFF8A5300)
     val Unavailable = Color(0xFF8B1A1A)
 }
@@ -401,6 +411,7 @@ val Ink = BolmitraColors.Ink
 val InkMuted = BolmitraColors.InkMuted
 val Paper = BolmitraColors.Paper
 val Verified = BolmitraColors.Verified
+val Corpus = BolmitraColors.Corpus
 val Approximate = BolmitraColors.Approximate
 val Unavailable = BolmitraColors.Unavailable
 

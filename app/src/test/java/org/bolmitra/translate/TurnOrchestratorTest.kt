@@ -41,7 +41,10 @@ class TurnOrchestratorTest {
     }
 
     private class FakeMt(var output: MtOutput?, val clock: () -> Unit = {}) : MtEngine {
+        /** Counted so a test can assert the model was never consulted, not merely unused. */
+        var calls = 0
         override fun translate(normalizedHindi: String): MtOutput? {
+            calls++
             clock()
             return output
         }
@@ -49,6 +52,15 @@ class TurnOrchestratorTest {
 
     private class FakeTts(var clip: AudioClip?) : TtsEngine {
         override fun synthesizeUtterance(text: String): AudioClip? = clip
+    }
+
+    /** Records what was handed to the voice, so a test can prove WHICH text got spoken. */
+    private class RecordingTts(var clip: AudioClip?) : TtsEngine {
+        var lastText: String? = null
+        override fun synthesizeUtterance(text: String): AudioClip? {
+            lastText = text
+            return clip
+        }
     }
 
     private class FakePlayer(var succeed: Boolean = true) : AudioPlayer {
@@ -96,29 +108,90 @@ class TurnOrchestratorTest {
 
     // --- the failure that must never become a silent substitution ------------------------
 
+    /**
+     * The invariant, restated after a deliberate behaviour change.
+     *
+     * This test used to assert that a T0 hit with no pack audio degraded to [TurnOutcome.TextOnly].
+     * That was the mechanism, not the point. The point — stated in the original comment — is that
+     * pack audio going missing must never cause **neural output to be substituted for reviewed
+     * content**.
+     *
+     * A T0 row with no pack audio is now synthesised from ITS OWN `targetTextDeva`, because the
+     * shipped glossary carries 375 rows that have no pre-rendered audio and would otherwise every
+     * one of them be a silent hit. Only the voice is synthetic; the words are unchanged, and the
+     * voice is already synthetic on every other rung.
+     *
+     * So what is asserted here now is the thing that actually matters: MT is never consulted, and
+     * the spoken text is the phrasebook's, not the model's.
+     */
     @Test
-    fun `verified phrase with missing audio degrades to text, it does NOT fall through to MT`() {
-        // If pack audio is missing, serving neural output instead would silently swap verified
-        // content for machine content. It must degrade to text and say why (§6.11 row 1).
+    fun `T0 hit with missing audio is synthesised from its OWN text and never falls through to MT`() {
         val book = FakePhrasebook(
             LookupResult(phrase("किताब खोलो", audioRef = null), Provenance.VERIFIED, 1.0),
         )
         val mt = FakeMt(MtOutput("should-not-be-used", "should-not-be-used"))
-        val out = orchestrator(book, mt = mt).handle("किताब खोलो", turnStartMs = 0)
+        val tts = RecordingTts(AudioClip(ShortArray(8)))
+        val player = FakePlayer()
+        val out = orchestrator(book, mt = mt, tts = tts, player = player)
+            .handle("किताब खोलो", turnStartMs = 0)
 
-        assertTrue(out is TurnOutcome.TextOnly)
+        // Provenance survives: this is still reviewed content, spoken by a synthetic voice.
+        assertTrue("got $out", out is TurnOutcome.VerifiedAudio)
+        assertEquals(Provenance.VERIFIED, out.provenance)
+
+        // The load-bearing assertion: the model was never asked, and the text spoken is the
+        // phrasebook row's.
+        assertEquals("placeholder-deva", tts.lastText)
+        assertEquals(0, mt.calls)
+        assertEquals(TurnOrchestrator.SYNTHESISED, (out as TurnOutcome.VerifiedAudio).audioRef)
+        // The clip travels with the outcome so a replay does not try to load SYNTHESISED as a file.
+        assertTrue("clip should be carried for replay", out.clip != null)
+    }
+
+    @Test
+    fun `T0 hit degrades to text only when synthesis ALSO fails`() {
+        // The rung is still reachable, which is what keeps the promise honest rather than
+        // aspirational — it just needs both the pack audio and the voice to be unavailable.
+        val book = FakePhrasebook(
+            LookupResult(phrase("किताब खोलो", audioRef = null), Provenance.VERIFIED, 1.0),
+        )
+        val out = orchestrator(book, tts = FakeTts(null)).handle("किताब खोलो", turnStartMs = 0)
+
+        assertTrue("got $out", out is TurnOutcome.TextOnly)
         assertEquals(DegradeReason.AUDIO_ASSET_MISSING, (out as TurnOutcome.TextOnly).reason)
         assertEquals("placeholder-deva", out.devanagariText)
     }
 
     @Test
-    fun `audio playback failure also degrades to text`() {
+    fun `a CORPUS row keeps its provenance and citation when synthesised`() {
+        val row = phrase("पानी", audioRef = null).copy(
+            provenance = Provenance.CORPUS,
+            src = "GATITOS",
+            srcEn = "water",
+        )
+        val book = FakePhrasebook(LookupResult(row, Provenance.CORPUS, 1.0))
+        val out = orchestrator(book).handle("पानी", turnStartMs = 0)
+
+        assertTrue("got $out", out is TurnOutcome.CorpusAudio)
+        out as TurnOutcome.CorpusAudio
+        // Not promoted to VERIFIED, and the citation the teacher needs is carried through.
+        assertEquals(Provenance.CORPUS, out.provenance)
+        assertEquals("GATITOS", out.src)
+        assertEquals("water", out.srcEn)
+    }
+
+    @Test
+    fun `pack audio playback failure falls back to synthesis, not to MT`() {
         val book = FakePhrasebook(
             LookupResult(phrase("किताब खोलो"), Provenance.VERIFIED, 1.0),
         )
-        val out = orchestrator(book, player = FakePlayer(succeed = false))
+        val mt = FakeMt(MtOutput("should-not-be-used", "should-not-be-used"))
+        // succeed=false fails the pack ref; the clip path is then tried and also uses this player,
+        // so it fails too, landing on TextOnly.
+        val out = orchestrator(book, mt = mt, player = FakePlayer(succeed = false))
             .handle("किताब खोलो", turnStartMs = 0)
-        assertTrue(out is TurnOutcome.TextOnly)
+        assertTrue("got $out", out is TurnOutcome.TextOnly)
+        assertEquals(0, mt.calls)
     }
 
     // --- Path B and the budget -----------------------------------------------------------

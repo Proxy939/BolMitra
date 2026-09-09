@@ -65,6 +65,7 @@ import org.bolmitra.speech.AudioCapture
 import org.bolmitra.speech.LiveTurnEngine
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.ui.common.ConcentricCircleButton
+import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.common.SoundwaveVisualizer
 
 private const val LISTEN_WINDOW_MS = 4000L
@@ -557,7 +558,7 @@ fun LiveClassPane(
                                 ?: "Translation will play here"
 
                             Text(
-                                text = outcomeText,
+                                text = OlChikiFont.annotate(outcomeText),
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
@@ -719,7 +720,14 @@ fun LiveClassPane(
                                     color = Color(0xFF475569),
                                 ),
                             )
-                            listOf("सुनो ध्यान से", "दोहराओ", "बहुत अच्छा", "फिर से बोलो", "अब लिखो").forEach { phrase ->
+                            // दोहराओ and बहुत अच्छा used to sit here. Both are now deliberately
+                            // unreachable from Hindi: GATITOS publishes ᱫᱦᱨᱟ and ᱵᱦᱟᱜᱮ for them,
+                            // neither of which has any stem in a 126,745-word Ol Chiki list, so
+                            // both were unmapped rather than repaired (see santali-hindi-keys.tsv).
+                            // Suggesting them would have walked a teacher straight onto the weakest
+                            // path in the app. बैठ जाओ and खड़े हो जाओ replace them because they
+                            // resolve to attested corpus content, ᱫᱩᱨᱩᱵ and ᱛᱮᱜᱚ.
+                            listOf("बैठ जाओ", "खड़े हो जाओ", "सुनो ध्यान से", "फिर से बोलो", "अब लिखो").forEach { phrase ->
                                 Box(
                                     modifier = Modifier
                                         .background(Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
@@ -891,10 +899,29 @@ fun LiveClassPane(
  */
 private fun TurnOutcome.displayText(): String = when (this) {
     is TurnOutcome.VerifiedAudio -> targetText
+    is TurnOutcome.CorpusAudio -> targetText
     is TurnOutcome.ApproximateAudio -> targetText
     is TurnOutcome.MachineAudio -> targetText
     is TurnOutcome.TextOnly -> devanagariText
     is TurnOutcome.Unavailable -> reason.explain()
+}
+
+/**
+ * The English a corpus row was translated from, where there is one.
+ *
+ * Shown under the translation so a teacher can see whether the quoted line actually fits what they
+ * said. Null for every other rung — nothing else has a source sentence to disclose.
+ */
+private fun TurnOutcome.corpusSourceNote(): String? = when (this) {
+    is TurnOutcome.CorpusAudio -> buildString {
+        srcEn?.let { append("translated from \u201C").append(it).append('\u201D') }
+        src?.let {
+            if (isNotEmpty()) append(" \u00B7 ")
+            append(it)
+        }
+    }.ifBlank { null }
+
+    else -> null
 }
 
 /**
@@ -907,6 +934,7 @@ private fun TurnOutcome.displayText(): String = when (this) {
  */
 private fun TurnOutcome.hasReplayableAudio(): Boolean = when (this) {
     is TurnOutcome.VerifiedAudio,
+    is TurnOutcome.CorpusAudio,
     is TurnOutcome.ApproximateAudio,
     is TurnOutcome.MachineAudio,
     -> true
@@ -924,8 +952,11 @@ private fun TurnOutcome.hasReplayableAudio(): Boolean = when (this) {
  * common case for Santali — found no entry and played nothing, silently.
  */
 private fun AudioPlayer.replay(outcome: TurnOutcome): Boolean = when (outcome) {
-    is TurnOutcome.VerifiedAudio -> play(outcome.audioRef)
-    is TurnOutcome.ApproximateAudio -> play(outcome.audioRef)
+    // Prefer the clip where one exists. A T0 row with no pack audio was synthesised, and its
+    // audioRef is the SYNTHESISED sentinel which names no file — playing it would fail.
+    is TurnOutcome.VerifiedAudio -> outcome.clip?.let { play(it) } ?: play(outcome.audioRef)
+    is TurnOutcome.CorpusAudio -> outcome.clip?.let { play(it) } ?: play(outcome.audioRef)
+    is TurnOutcome.ApproximateAudio -> outcome.clip?.let { play(it) } ?: play(outcome.audioRef)
     is TurnOutcome.MachineAudio -> play(outcome.clip)
     is TurnOutcome.TextOnly, is TurnOutcome.Unavailable -> false
 }
@@ -1044,6 +1075,20 @@ private fun HeardAndTranslatedBox(
                 )
             }
 
+            // Where a corpus row came from, and the English it was translated from. This is the
+            // disclosure that makes CORPUS provenance honest rather than decorative: a teacher can
+            // see the quoted line was written for a different sentence than the one they said.
+            result?.outcome?.corpusSourceNote()?.takeIf { !pending }?.let { note ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 14.sp,
+                        color = Color(0xFF17456B),
+                    ),
+                )
+            }
+
             // Replay. Shown only once a turn has produced audio, because a button that cannot do
             // anything is worse than no button in front of a class.
             val outcome = result?.outcome
@@ -1148,7 +1193,10 @@ private fun TranscriptHalf(
         Spacer(Modifier.height(6.dp))
 
         Text(
-            text = body ?: placeholder,
+            // annotate() styles only the Ol Chiki runs with the bundled face. Applying that family
+            // to the whole string would tofu the Devanagari, which this box shows on the TextOnly
+            // rung — the font carries 53 codepoints and no Devanagari at all.
+            text = OlChikiFont.annotate(body ?: placeholder),
             style = MaterialTheme.typography.bodyLarge.copy(
                 // 16 sp floor: this is the one box on the screen a teacher has to actually read.
                 fontSize = 16.sp,

@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
+import org.bolmitra.phrasebook.SantaliGlossary
 import org.bolmitra.translate.AudioPlayer
 import org.bolmitra.translate.IndicTrans2MtEngine
 import org.bolmitra.translate.PhrasebookEngine
@@ -44,6 +45,8 @@ class LiveTurnEngine private constructor(
     private val store: ModelStore,
     /** Which target language this instance speaks. One instance per language; see [get]. */
     val language: TargetLanguage,
+    /** Application context. Only used to read the glossary asset; never an Activity (O17). */
+    private val context: Context,
 ) {
 
     sealed interface LoadState {
@@ -92,7 +95,13 @@ class LiveTurnEngine private constructor(
      * the wrong language. A language with no pack now gets an empty T0 and falls through to T1,
      * which labels itself `MACHINE`.
      */
-    private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(DemoSeed.phrasesFor(language))
+    private val phrasebook: PhrasebookEngine = InMemoryPhrasebook(
+        // Seeded rows first, glossary second, and the order is load-bearing: PhraseMatcher's exact
+        // rung takes the FIRST match, so a hand-seeded VERIFIED row always beats a CORPUS row with
+        // the same Hindi. Reviewed content outranks quoted content, which is the whole point of the
+        // provenance ladder.
+        DemoSeed.phrasesFor(language) + SantaliGlossary.phrasesFor(context, language),
+    )
 
     /** Resolves a pack ref back to the phrase text, for [RenderingAudioPlayer]. */
     private val textForRef: (String) -> String? = { ref ->
@@ -352,7 +361,8 @@ class LiveTurnEngine private constructor(
             language: TargetLanguage = TargetLanguage.DEFAULT,
         ): LiveTurnEngine = synchronized(instances) {
             instances.getOrPut(language) {
-                LiveTurnEngine(ModelStore(context.applicationContext), language)
+                val app = context.applicationContext
+                LiveTurnEngine(ModelStore(app), language, app)
             }
         }
     }

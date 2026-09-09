@@ -17,6 +17,24 @@ enum class Provenance {
     /** Native-speaker reviewed. Exact phrasebook hit, or a verified template. */
     VERIFIED,
 
+    /**
+     * Verbatim from a published, citable corpus. **No speaker has reviewed it.**
+     *
+     * The level this project was missing, and the reason it now exists: importing CC0/CC-BY Santali
+     * data left every row having to claim either [VERIFIED], which would be a lie about
+     * native-speaker review, or [MACHINE], which would be a lie about where the string came from and
+     * would also discard the citation. Neither is acceptable when the content is spoken to children.
+     *
+     * A row at this level must carry both `src` (which corpus) and `srcEn` (the English the corpus
+     * actually translated). `srcEn` matters more than it looks: the closest published Santali line to
+     * a teacher's Hindi is often a near-miss, and showing the English it came from lets a reviewer
+     * see the gap instead of having it papered over.
+     *
+     * Ranks below [VERIFIED] and above [MACHINE]: a human wrote it for a real purpose, but not for
+     * this purpose and not for this classroom.
+     */
+    CORPUS,
+
     /** Fuzzy phrasebook match above threshold. Usable, but the teacher should judge. */
     APPROXIMATE,
 
@@ -39,6 +57,28 @@ data class Phrase(
     val audioRef: String?,
     val verifiedBy: String?,
     val packVersion: String,
+    /**
+     * Where this row's content came from. **Carried, never inferred from the match rung.**
+     *
+     * [PhraseMatcher] used to hand back [Provenance.VERIFIED] for any exact hit, because every row
+     * in the build was a hand-seeded one. The moment corpus rows exist that is a lie: an exact match
+     * on a GATITOS line would have claimed native-speaker review of a string no speaker has read.
+     * The rung can only ever *downgrade* this value now — see `PhraseMatcher.lookup`.
+     */
+    val provenance: Provenance = Provenance.VERIFIED,
+    /**
+     * Which corpus this row came from, e.g. `GATITOS` or `Hembram/Glossary`. Null for hand-authored
+     * and speaker-verified rows. Required whenever provenance is [Provenance.CORPUS].
+     */
+    val src: String? = null,
+    /**
+     * The English the corpus line was actually translated from.
+     *
+     * Nongor's idea, and the sharpest one in the whole survey. The closest published Santali line to
+     * "Do you need help?" may be "Can I help you?" — recording the English lets a reviewer see that
+     * gap rather than discovering it in front of a class.
+     */
+    val srcEn: String? = null,
     /**
      * A template carries a `{N}` slot, e.g. `पेज {N} खोलो`. Template audio plays with the
      * numeral synthesised separately, which covers combinatorial cases (page numbers,

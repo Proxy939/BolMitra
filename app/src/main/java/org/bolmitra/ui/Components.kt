@@ -34,8 +34,10 @@ import androidx.compose.ui.unit.sp
 import org.bolmitra.phrasebook.Provenance
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.ui.common.KidsBannerArt
+import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.theme.Approximate
 import org.bolmitra.ui.theme.BolmitraColors
+import org.bolmitra.ui.theme.Corpus
 import org.bolmitra.ui.theme.Radius
 import org.bolmitra.ui.theme.Unavailable
 import org.bolmitra.ui.theme.Verified
@@ -294,7 +296,9 @@ private fun LanguagePill(
                 ),
             )
             Text(
-                nativeScript,
+                // Santali's endonym is Ol Chiki, so it goes through the bundled face like every
+                // other Ol Chiki string. Mundari and Ho are Devanagari and get no span.
+                OlChikiFont.annotate(nativeScript),
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 10.sp,
                     color = if (isSelected) Color.White.copy(alpha = 0.9f) else Color(0xFF64748B),
@@ -367,6 +371,10 @@ fun FooterTipBar(
 fun ProvenanceChip(provenance: Provenance, modifier: Modifier = Modifier) {
     val (bg, label, glyph) = when (provenance) {
         Provenance.VERIFIED -> Triple(Verified, "Verified", "\u2713")
+        // A quotation mark, because that is exactly the claim: this string is quoted from a
+        // published source, not reviewed for this classroom. Distinct glyph, word and hue from
+        // "Approximate", which is a claim about our matcher rather than about the text's origin.
+        Provenance.CORPUS -> Triple(Corpus, "From corpus", "\u201C")
         Provenance.APPROXIMATE -> Triple(Approximate, "Approximate", "\u2248")
         Provenance.MACHINE -> Triple(Unavailable, "Machine", "\u26A0")
     }

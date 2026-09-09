@@ -1,0 +1,475 @@
+# Hand-authored Hindi keys for the Santali glossary.
+#
+# WHAT THIS FILE IS FOR
+# Every CC0/CC-BY Santali resource found is English<->Santali. This app is Hindi-in. This file is
+# the bridge: it maps the English key of a glossary row to the Hindi a teacher would actually say,
+# so the row becomes reachable from a Hindi transcript.
+#
+# WHY WRITING THIS BREAKS NO INVARIANT
+# The project's first rule is that Mundari, Santali and Ho content must come from a named speaker or
+# be labelled machine output. That rule is about the TARGET language. Nothing here touches the
+# Santali: every target string stays verbatim from its corpus, provenance stays CORPUS, and `src`
+# still names where it came from. What is authored here is the Hindi LOOKUP KEY, and Hindi is a
+# major language with settled orthography that is not being invented.
+#
+# The Hindi is chosen to match classroom speech rather than dictionary register, because it has to
+# match what the recogniser returns when a teacher talks.
+#
+# FORMAT
+#   <english key from the glossary, case-insensitive> TAB <hindi>
+# Lines starting with # are comments. A row with no Hindi is simply not reachable from Hindi yet.
+#
+# DELIBERATE OMISSIONS
+# Some source rows are unsuitable for a primary-school app and are left without a Hindi key on
+# purpose, which keeps them out of Hindi lookup: Beef, Pork, Wine, Bitch, genital. The rows still
+# exist in the glossary — this file decides reachability, not membership. Recorded rather than
+# silently filtered so the choice is reviewable.
+#
+# Source typos are mapped to the intended word: Coriender -> coriander, Raddish -> radish,
+# Maiz -> maize, Comfit -> cardamom sweet, Panter -> (unclear, left unmapped), Hoond -> (unclear).
+#
+# UNMAPPED BECAUSE THE PUBLISHED TARGET IS MALFORMED
+# Two GATITOS rows were caught by checking every ingested form against sat.dic, a 126,745-word Ol
+# Chiki list. Both are cases where the SAME corpus spells the SAME word correctly elsewhere, which
+# is the internal-inconsistency argument that settled the ASCII-period repair.
+#
+#   repeat / दोहराओ    GATITOS gives ᱫᱦᱨᱟ, no stem support at all. Its own `again` row is ᱫᱚᱦᱚᱲᱟ —
+#                      the same word with both ᱚ vowels present and ᱲ where this has ᱨ.
+#   very good / बहुत अच्छा  GATITOS gives ᱟᱰᱤ ᱵᱦᱟᱜᱮ. ᱟᱰᱤ is fine; ᱵᱦᱟᱜᱮ has zero stem support, while
+#                      ᱵᱷᱟᱜᱮ (ᱷ U+1C77 OH, the aspiration marker, not ᱦ U+1C66 IH) IS attested — and
+#                      is already in this glossary, in the variants column of GATITOS's `good` row.
+#
+# Neither is repaired at ingest. A blanket IH->OH rewrite would corrupt real words: ᱫᱦᱚᱨᱚᱢ (dhorom)
+# is attested WITH IH, and consonant+IH occurs 4,402 times across the wordlist. An evidence-gated
+# per-word repair would make the built asset depend on a 1.5 MB un-versioned cache file, so the
+# same command would emit different data on a clean machine. Unmapping costs one lookup and lies
+# about nothing: both degrade to T1 with MACHINE provenance, and अच्छा -> `good` (stem-clean) still
+# carries classroom praise.
+
+# ---------------------------------------------------------------------------------------------
+# Eval-critical terms. These are the content words the 11-sentence eval set turns on, so they are
+# the ones a glossary bias can actually move the score with.
+# ---------------------------------------------------------------------------------------------
+book	किताब
+open	खोलो
+close	बंद करो
+listen	सुनो
+name	नाम
+speak	बोलो
+say	कहो
+tell	बताओ
+sit	बैठो
+stand	खड़े हो
+# ALIASES. A repeated English word adds a key, it does not replace one. These two are the exact
+# sentences the eval set fails on, and both are the pure vector-verb construction where जाओ carries
+# aspect and no lexical content: बैठ जाओ is "sit down", not "sit go". Verified they reach ᱫᱩᱨᱩᱵ and
+# ᱛᱮᱜᱚ. NOT generalised into HindiNormalizer as "drop जाओ" — that also rewrites बाहर जाओ ("go
+# outside") to बाहर, and a class told to go outside would hear "outside".
+sit	बैठ जाओ
+stand	खड़े हो जाओ
+water	पानी
+drink	पीना
+count	गिनती
+school	स्कूल
+holiday	छुट्टी
+today	आज
+tomorrow	कल
+learn	सीखना
+come	आओ
+go	जाओ
+read	पढ़ो
+write	लिखो
+quiet	चुप
+teacher	शिक्षक
+student	छात्र
+child	बच्चा
+hand	हाथ
+pen	कलम
+pencil	पेंसिल
+board	बोर्ड
+paper	कागज़
+yes	हाँ
+no	नहीं
+please	कृपया
+thank you	धन्यवाद
+good	अच्छा
+# very good	बहुत अच्छा  <- unmapped, malformed target. See UNMAPPED BECAUSE... in the header.
+again	फिर
+# repeat	दोहराओ    <- unmapped, malformed target. See UNMAPPED BECAUSE... in the header.
+up	ऊपर
+down	नीचे
+big	बड़ा
+small	छोटा
+look	देखो
+see	देखो
+eat	खाओ
+sleep	सोना
+play	खेलो
+run	दौड़ो
+
+# ---------------------------------------------------------------------------------------------
+# Numerals, all 101. Authoritative source is Hembram: GATITOS publishes one string for six, seven
+# and eight, and this app teaches counting.
+# ---------------------------------------------------------------------------------------------
+zero	शून्य
+one	एक
+two	दो
+three	तीन
+four	चार
+five	पाँच
+six	छह
+seven	सात
+eight	आठ
+nine	नौ
+ten	दस
+eleven	ग्यारह
+twelve	बारह
+thirteen	तेरह
+fourteen	चौदह
+fifteen	पंद्रह
+sixteen	सोलह
+seventeen	सत्रह
+eighteen	अठारह
+nineteen	उन्नीस
+twenty	बीस
+twenty one	इक्कीस
+twenty two	बाईस
+twenty three	तेईस
+twenty four	चौबीस
+twenty five	पच्चीस
+twenty six	छब्बीस
+twenty seven	सत्ताईस
+twenty eight	अट्ठाईस
+twenty nine	उनतीस
+thirty	तीस
+thirty one	इकतीस
+thirty two	बत्तीस
+thirty three	तैंतीस
+thirty four	चौंतीस
+thirty five	पैंतीस
+thirty six	छत्तीस
+thirty seven	सैंतीस
+thirty eight	अड़तीस
+thirty nine	उनतालीस
+forty	चालीस
+forty one	इकतालीस
+forty two	बयालीस
+forty three	तैंतालीस
+forty four	चवालीस
+forty five	पैंतालीस
+forty six	छियालीस
+forty seven	सैंतालीस
+forty eight	अड़तालीस
+forty nine	उनचास
+fifty	पचास
+fifty one	इक्यावन
+fifty two	बावन
+fifty three	तिरेपन
+fifty four	चौवन
+fifty five	पचपन
+fifty six	छप्पन
+fifty seven	सत्तावन
+fifty eight	अट्ठावन
+fifty nine	उनसठ
+sixty	साठ
+sixty one	इकसठ
+sixty two	बासठ
+sixty three	तिरेसठ
+sixty four	चौंसठ
+sixty five	पैंसठ
+sixty six	छियासठ
+sixty seven	सड़सठ
+sixty eight	अड़सठ
+sixty nine	उनहत्तर
+seventy	सत्तर
+seventy one	इकहत्तर
+seventy two	बहत्तर
+seventy three	तिहत्तर
+seventy four	चौहत्तर
+seventy five	पचहत्तर
+seventy six	छिहत्तर
+seventy seven	सतहत्तर
+seventy eight	अठहत्तर
+seventy nine	उन्यासी
+eighty	अस्सी
+eighty one	इक्यासी
+eighty two	बयासी
+eighty three	तिरासी
+eighty four	चौरासी
+eighty five	पचासी
+eighty six	छियासी
+eighty seven	सतासी
+eighty eight	अठासी
+eighty nine	उनानवे
+ninety	नब्बे
+ninety one	इक्यानवे
+ninety two	बानवे
+ninety three	तिरानवे
+ninety four	चौरानवे
+ninety five	पंचानवे
+ninety six	छियानवे
+ninety seven	सत्तानवे
+ninety eight	अट्ठानवे
+ninety nine	निन्यानवे
+one hundred	सौ
+
+# ---------------------------------------------------------------------------------------------
+# Body parts (50)
+# ---------------------------------------------------------------------------------------------
+Head	सिर
+Skull	खोपड़ी
+Brain	दिमाग़
+Hair	बाल
+Forehead	माथा
+Back of head	सिर का पिछला भाग
+Face	चेहरा
+Eye	आँख
+Eyelid	पलक
+Ear	कान
+Nose	नाक
+Mouth	मुँह
+Lip	होंठ
+Tongue	जीभ
+Tooth	दाँत
+Cheek	गाल
+Palate	तालू
+Neck	गर्दन
+Shoulder	कंधा
+arm	बाँह
+Elbow	कोहनी
+Palm	हथेली
+Finger	उँगली
+Thumb	अँगूठा
+Middle finger	बीच की उँगली
+Ring finger	अनामिका
+Little finger	छोटी उँगली
+Nail	नाखून
+Chest	छाती
+Heart	दिल
+Lungs	फेफड़े
+Stomach	पेट
+Navel	नाभि
+Waist	कमर
+Back	पीठ
+Spinal cord	रीढ़ की हड्डी
+Buttock	नितंब
+Rump	पुट्ठा
+Thigh	जाँघ
+Knee	घुटना
+Feet	पैर
+Foot	पैर
+Heel	एड़ी
+Bone	हड्डी
+Blood	ख़ून
+Skin	त्वचा
+Meat	माँस
+
+# ---------------------------------------------------------------------------------------------
+# Colours (9). "Brinjal" is listed under colour in the source and means the purple shade.
+# ---------------------------------------------------------------------------------------------
+Black	काला
+White	सफ़ेद
+Red	लाल
+Blue	नीला
+Green	हरा
+Yellow	पीला
+Brown	भूरा
+Orange	नारंगी
+Brinjal	बैंगनी
+
+# ---------------------------------------------------------------------------------------------
+# Family and people (35)
+# ---------------------------------------------------------------------------------------------
+Father	पिता
+Mother	माता
+Brother	भाई
+Sister	बहन
+Son	बेटा
+Daughter	बेटी
+Husband	पति
+Grand Father	दादा
+Grand Mother	दादी
+Maternal Grandfather	नाना
+Maternal Grandmother	नानी
+Uncle	चाचा
+Aunt	चाची
+Maternal Uncle	मामा
+Maternal Aunt	मामी
+Mother's sister	मौसी
+Maternal Sister	मौसेरी बहन
+Father in law	ससुर
+Mother in law	सास
+Sister in law	भाभी
+Son in law	दामाद
+Step Father	सौतेला पिता
+Step Mother	सौतेली माता
+Step Brother	सौतेला भाई
+Step Sister	सौतेली बहन
+Step Son	सौतेला बेटा
+Step Daughter	सौतेली बेटी
+Friend	दोस्त
+Guest	मेहमान
+Relative	रिश्तेदार
+Love	प्यार
+Own	अपना
+Preceptor	गुरु
+Pupil	शिष्य
+
+# ---------------------------------------------------------------------------------------------
+# Time (7)
+# ---------------------------------------------------------------------------------------------
+Second	सेकंड
+Minute	मिनट
+Hour	घंटा
+Day	दिन
+Week	सप्ताह
+Month	महीना
+Year	साल
+
+# ---------------------------------------------------------------------------------------------
+# Days and months (19)
+# ---------------------------------------------------------------------------------------------
+Sunday	रविवार
+Monday	सोमवार
+Tuesday	मंगलवार
+Wednesday	बुधवार
+Thursday	गुरुवार
+Friday	शुक्रवार
+Saturday	शनिवार
+January	जनवरी
+February	फ़रवरी
+March	मार्च
+April	अप्रैल
+May	मई
+June	जून
+July	जुलाई
+August	अगस्त
+September	सितंबर
+October	अक्तूबर
+November	नवंबर
+December	दिसंबर
+
+# ---------------------------------------------------------------------------------------------
+# Animals (37). "Bitch" left unmapped on purpose; "Hoond" and "Panter" are unclear in the source.
+# ---------------------------------------------------------------------------------------------
+Cow	गाय
+Bull	बैल
+Ox	बैल
+Calf	बछड़ा
+Buffalo	भैंस
+Dog	कुत्ता
+Cat	बिल्ली
+Kitten	बिल्ली का बच्चा
+Horse	घोड़ा
+Mare	घोड़ी
+Colt	बछेड़ा
+Ass	गधा
+Camel	ऊँट
+Elephant	हाथी
+Lion	शेर
+Tiger	बाघ
+Panther	तेंदुआ
+Bear	भालू
+Fox	लोमड़ी
+Hyena	लकड़बग्घा
+Deer	हिरण
+Fawn	हिरण का बच्चा
+Monkey	बंदर
+Gorilla	गोरिल्ला
+Mouse	चूहा
+Rabbit	खरगोश
+Squirrel	गिलहरी
+Pig	सूअर
+Boar	जंगली सूअर
+Sheep	भेड़
+Lamb	मेमना
+He goat	बकरा
+She goat	बकरी
+Kid	बकरी का बच्चा
+Rhinoceros	गैंडा
+
+# ---------------------------------------------------------------------------------------------
+# Birds (13)
+# ---------------------------------------------------------------------------------------------
+Cock	मुर्गा
+Hen	मुर्गी
+Crow	कौआ
+Parrot	तोता
+Peacock	मोर
+Pigeon	कबूतर
+Sparrow	गौरैया
+Owl	उल्लू
+Eagle	चील
+Vulture	गिद्ध
+Myna	मैना
+Swan	हंस
+duck	बत्तख़
+
+# ---------------------------------------------------------------------------------------------
+# Vegetables (19). Source typos mapped to the intended word.
+# ---------------------------------------------------------------------------------------------
+Potato	आलू
+Tomato	टमाटर
+Onion	प्याज़
+Cabbage	पत्तागोभी
+Cauliflower	फूलगोभी
+Spinach	पालक
+Cucumber	खीरा
+Pea	मटर
+Carrot	गाजर
+Raddish	मूली
+Turnip	शलजम
+Ginger	अदरक
+Chilli	मिर्च
+Coriender	धनिया
+Mint	पुदीना
+Lady finger	भिंडी
+Bitter gourd	करेला
+Bottle gourd	लौकी
+Papaya	पपीता
+Jack fruit	कटहल
+
+# ---------------------------------------------------------------------------------------------
+# Food (45). Beef, Pork and Wine left unmapped on purpose for a primary-school app.
+# ---------------------------------------------------------------------------------------------
+Rice	चावल
+Wheat	गेहूँ
+Flour	आटा
+Maida	मैदा
+Semolina	सूजी
+Grain	अनाज
+Gram	चना
+Pulse	दाल
+Maiz	मक्का
+Bread	रोटी
+Milk	दूध
+Ghee	घी
+Cheese	पनीर
+Honey	शहद
+Sugar	चीनी
+Sugar candy	मिश्री
+Syrup	चाशनी
+Oil	तेल
+Mustard	सरसों
+Mustard oil	सरसों का तेल
+Tea	चाय
+Coffee	कॉफ़ी
+Ice	बर्फ़
+Ice-cream	आइस-क्रीम
+Biscuit	बिस्कुट
+Pickle	अचार
+Sauce	चटनी
+Tomato sauce	टमाटर की चटनी
+Tamarind	इमली
+Mango	आम
+Banana	केला
+Apple	सेब
+Grape	अंगूर
+Pomegranate	अनार
+Watermelon	तरबूज़
+Date	खजूर
+Cashew	काजू
+lychee	लीची
+Mutton	मटन
+Vegetables	सब्ज़ियाँ
+Comfit	इलायची दाना

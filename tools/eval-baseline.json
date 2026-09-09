@@ -1,0 +1,123 @@
+{
+  "summary": {
+    "sentences": 11,
+    "mean_token_f1": 0.3354,
+    "mean_chrf2": 0.3329,
+    "accepted": 4,
+    "empty": 0,
+    "copied": 0,
+    "accept_threshold_token_f1": 0.5
+  },
+  "sentences": [
+    {
+      "hindi": "किताब खोलो",
+      "santali": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱮᱦᱚᱵ ᱢᱮ ᱾",
+      "back": "किताब शुरू करें।",
+      "token_f1": 0.4,
+      "chrf2": 0.4,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "किताब बंद करो",
+      "santali": "ᱯᱚᱛᱚᱵ ᱫᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱢᱮ ᱾",
+      "back": "किताब को बंद कर दें।",
+      "token_f1": 0.5,
+      "chrf2": 0.6667,
+      "accepted": true,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "ताली बजाओ",
+      "santali": "ᱠᱞᱤᱯ ᱢᱮ ᱾",
+      "back": "क्लिप करें।",
+      "token_f1": 0.0,
+      "chrf2": 0.0,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "ध्यान से सुनो",
+      "santali": "ᱟᱹᱰᱤ ᱱᱟᱯᱟᱭ ᱛᱮ ᱵᱟᱰᱟᱭ ᱢᱮ ᱾",
+      "back": "बहुत अच्छी तरह से पता लगाएँ।",
+      "token_f1": 0.2222,
+      "chrf2": 0.0645,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "अपना नाम बताओ",
+      "santali": "ᱟᱢᱟᱜ ᱧᱩᱛᱩᱢ ᱞᱟᱹᱭ ᱢᱮ ᱾",
+      "back": "अपना नाम बताएँ।",
+      "token_f1": 0.6667,
+      "chrf2": 0.8571,
+      "accepted": true,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "मेरे साथ बोलो",
+      "santali": "ᱤᱧ ᱥᱟᱶ ᱠᱟᱛᱷᱟ ᱞᱟᱹᱭ ᱢᱮ ᱾",
+      "back": "मुझसे बात करें।",
+      "token_f1": 0.0,
+      "chrf2": 0.0952,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "बैठ जाओ",
+      "santali": "ᱥᱮᱱ ᱢᱮ ᱾",
+      "back": "चले जाओ।",
+      "token_f1": 0.5,
+      "chrf2": 0.4,
+      "accepted": true,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "खड़े हो जाओ",
+      "santali": "ᱛᱷᱟᱯᱚᱱ ᱢᱮ ᱾",
+      "back": "स्थापित करें।",
+      "token_f1": 0.0,
+      "chrf2": 0.0,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "पानी पीना है",
+      "santali": "ᱫᱟᱜᱧᱟᱢ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱾",
+      "back": "बारिश हो रही है।",
+      "token_f1": 0.2857,
+      "chrf2": 0.1,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "आज हम गिनती सीखेंगे",
+      "santali": "ᱛᱮᱦᱮᱧ ᱤᱧᱟᱹᱜ ᱞᱮᱠᱷᱟ ᱥᱮᱪ ᱦᱩᱭᱩᱜ ᱠᱟᱱᱟ ᱾",
+      "back": "आज हम गणना सीख रहे हैं।",
+      "token_f1": 0.4,
+      "chrf2": 0.3871,
+      "accepted": false,
+      "empty_santali": false,
+      "copied_input": false
+    },
+    {
+      "hindi": "कल छुट्टी है इसलिए स्कूल बंद रहेगा",
+      "santali": "ᱦᱚᱭᱦᱩᱫᱤᱥ ᱫᱚ ᱪᱷᱟᱹᱲ ᱠᱟᱱᱟ ᱚᱱᱟᱛᱮ ᱵᱤᱨᱫᱟᱹᱜᱟᱲ ᱫᱚ ᱵᱚᱱᱚᱫᱚᱞ ᱛᱟᱦᱮᱸᱱᱟ ᱾",
+      "back": "माहौल खुला है इसलिए स्कूल बंद रहेगा।",
+      "token_f1": 0.7143,
+      "chrf2": 0.6909,
+      "accepted": true,
+      "empty_santali": false,
+      "copied_input": false
+    }
+  ]
+}

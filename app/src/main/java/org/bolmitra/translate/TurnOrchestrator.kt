@@ -48,15 +48,47 @@ sealed interface TurnOutcome {
     /** The provenance to surface in the UI (§4.5). Null where nothing was translated. */
     val provenance: Provenance?
 
-    /** Path A. Native-speaker verified phrase, pre-rendered audio. The common case. */
-    data class VerifiedAudio(val targetText: String, val audioRef: String) : TurnOutcome {
+    /**
+     * Path A. Native-speaker verified phrase. The common case.
+     *
+     * [clip] is set only when there was no pack audio and the text was synthesised instead. When it
+     * is present it is the authoritative audio for a replay, because [audioRef] then names no file
+     * that exists — see [TurnOrchestrator.SYNTHESISED].
+     */
+    data class VerifiedAudio(
+        val targetText: String,
+        val audioRef: String,
+        val clip: AudioClip? = null,
+    ) : TurnOutcome {
         override val provenance = Provenance.VERIFIED
     }
 
     /** Path A, fuzzy. Served but flagged, so the teacher can judge (§6.3 step 2). */
-    data class ApproximateAudio(val targetText: String, val audioRef: String, val score: Double) :
-        TurnOutcome {
+    data class ApproximateAudio(
+        val targetText: String,
+        val audioRef: String,
+        val score: Double,
+        val clip: AudioClip? = null,
+    ) : TurnOutcome {
         override val provenance = Provenance.APPROXIMATE
+    }
+
+    /**
+     * Path A, corpus-sourced. Verbatim from a published corpus, with pre-rendered audio.
+     *
+     * Between [VerifiedAudio] and [ApproximateAudio] on purpose. A human wrote this string, so it
+     * is not machine output; but they wrote it for a dictionary or a Bible, not for this lesson, so
+     * it is not verified either. [srcEn] carries the English the corpus actually translated, which
+     * is what lets a reviewer judge whether it fits the teacher's sentence.
+     */
+    data class CorpusAudio(
+        val targetText: String,
+        val audioRef: String,
+        val src: String?,
+        val srcEn: String?,
+        val clip: AudioClip? = null,
+    ) : TurnOutcome {
+        override val provenance = Provenance.CORPUS
     }
 
     /** Path B. T1 output synthesised by VITS. No human has reviewed this string. */
@@ -126,19 +158,62 @@ class TurnOrchestrator(
 
         if (hit != null) {
             val audioRef = hit.phrase.audioRef
-            // A verified phrase whose pack audio is missing must not silently fall through to
-            // the neural path — that would swap verified content for machine output without
-            // telling anyone. Degrade to text and name the reason (§6.11 row 1).
             if (audioRef == null || !player.play(audioRef)) {
-                return TurnOutcome.TextOnly(
-                    hit.phrase.targetTextDeva,
-                    DegradeReason.AUDIO_ASSET_MISSING,
-                )
+                // No pack audio. Synthesise the T0 text itself rather than degrading to a silent
+                // rung.
+                //
+                // This is NOT the thing the original comment here forbade. Falling through to the
+                // NEURAL PATH would swap the reviewed text for machine output without telling
+                // anyone, and that is still forbidden below. Synthesising *this row's own*
+                // targetTextDeva changes only the voice, never the words — and the voice is already
+                // synthetic on every other rung. Provenance is untouched, so the teacher still sees
+                // where the text came from.
+                //
+                // It matters because the glossary ships 375 rows with no pre-rendered audio. Without
+                // this they would every one of them be a silent hit, which is a working lookup that
+                // the class cannot hear.
+                val spoken = hit.phrase.targetTextDeva
+                val clip = spoken.takeIf { it.isNotBlank() }
+                    ?.let { tts.synthesizeUtterance(it) }
+                if (clip == null || !player.play(clip)) {
+                    return TurnOutcome.TextOnly(spoken, DegradeReason.AUDIO_ASSET_MISSING)
+                }
+                // The clip travels with the outcome so a replay does not have to re-synthesise, and
+                // so it never tries to load SYNTHESISED as a file path.
+                return when (hit.provenance) {
+                    Provenance.VERIFIED ->
+                        TurnOutcome.VerifiedAudio(
+                            hit.phrase.targetTextNative, SYNTHESISED, clip = clip,
+                        )
+                    Provenance.CORPUS ->
+                        TurnOutcome.CorpusAudio(
+                            hit.phrase.targetTextNative,
+                            SYNTHESISED,
+                            src = hit.phrase.src,
+                            srcEn = hit.phrase.srcEn,
+                            clip = clip,
+                        )
+                    Provenance.APPROXIMATE, Provenance.MACHINE ->
+                        TurnOutcome.ApproximateAudio(
+                            hit.phrase.targetTextNative, SYNTHESISED, hit.score, clip = clip,
+                        )
+                }
             }
+            // Each level gets its own outcome. Previously everything that was not VERIFIED fell
+            // into ApproximateAudio, which for a corpus row would have told the teacher "our
+            // matcher was unsure" when the truth is "this is quoted from a published source and no
+            // speaker has reviewed it". Different claims, different fixes.
             return when (hit.provenance) {
                 Provenance.VERIFIED ->
                     TurnOutcome.VerifiedAudio(hit.phrase.targetTextNative, audioRef)
-                else ->
+                Provenance.CORPUS ->
+                    TurnOutcome.CorpusAudio(
+                        hit.phrase.targetTextNative,
+                        audioRef,
+                        src = hit.phrase.src,
+                        srcEn = hit.phrase.srcEn,
+                    )
+                Provenance.APPROXIMATE, Provenance.MACHINE ->
                     TurnOutcome.ApproximateAudio(
                         hit.phrase.targetTextNative,
                         audioRef,
@@ -187,4 +262,15 @@ class TurnOrchestrator(
     /** True if [costMs] more work still lands inside the deadline. */
     private fun canAfford(turnStartMs: Long, costMs: Long): Boolean =
         (nowMs() - turnStartMs) + costMs <= deadlineMs
+
+    companion object {
+        /**
+         * Stands in for an `audioRef` when a T0 row had no pack audio and was synthesised instead.
+         *
+         * A sentinel rather than null because the outcome types require a ref, and rather than a
+         * fake path because a replay must not try to load a file that was never there — the
+         * replay path checks for this value and re-synthesises.
+         */
+        const val SYNTHESISED = "tts:synthesised"
+    }
 }

@@ -46,15 +46,15 @@ object PhraseMatcher {
         val query = HindiNormalizer.normalize(rawHindi)
         if (query.isEmpty()) return null
 
-        // 1. Exact.
+        // 1. Exact. The row's own provenance stands — an exact hit adds no uncertainty.
         candidates.firstOrNull { !it.isTemplate && it.hiNormalized == query }
-            ?.let { return LookupResult(it, Provenance.VERIFIED, 1.0) }
+            ?.let { return LookupResult(it, it.provenance, 1.0) }
 
-        // 2. Template slot fill. Verified content, so it outranks any fuzzy match.
+        // 2. Template slot fill. Exact in the same sense, so the row's provenance stands too.
         for (t in candidates.filter { it.isTemplate }) {
             val slot = SlotFill.match(query, t.hiNormalized)
             if (slot != null) {
-                return LookupResult(t, Provenance.VERIFIED, 1.0, slotValue = slot)
+                return LookupResult(t, t.provenance, 1.0, slotValue = slot)
             }
         }
 
@@ -65,11 +65,31 @@ object PhraseMatcher {
             .maxByOrNull { it.second }
 
         if (best != null && best.second >= threshold) {
-            return LookupResult(best.first, Provenance.APPROXIMATE, best.second)
+            return LookupResult(best.first, downgradeForFuzzy(best.first.provenance), best.second)
         }
 
         // 4. Miss.
         return null
+    }
+
+    /**
+     * Provenance for a fuzzy hit: the row's own level, capped at [Provenance.APPROXIMATE].
+     *
+     * Two distinct uncertainties get combined here and the cap is what keeps them honest.
+     * [Provenance.VERIFIED] is a claim about the TEXT — a speaker read it. A fuzzy match adds a
+     * claim about the MATCH — we are not certain this row is what the teacher said. So a fuzzy hit
+     * on speaker-reviewed content is still only approximate, which is the pre-existing behaviour and
+     * correct.
+     *
+     * What is new is the other direction: a fuzzy hit on a [Provenance.CORPUS] row must not be
+     * *promoted* to APPROXIMATE, because APPROXIMATE at least implies a human wrote it for this
+     * purpose. It stays CORPUS, which carries the weaker claim and the citation.
+     */
+    private fun downgradeForFuzzy(rowProvenance: Provenance): Provenance = when (rowProvenance) {
+        Provenance.VERIFIED -> Provenance.APPROXIMATE
+        Provenance.CORPUS -> Provenance.CORPUS
+        Provenance.APPROXIMATE -> Provenance.APPROXIMATE
+        Provenance.MACHINE -> Provenance.MACHINE
     }
 
     /**

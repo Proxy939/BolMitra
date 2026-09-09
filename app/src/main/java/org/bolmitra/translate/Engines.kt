@@ -73,4 +73,16 @@ data class AudioClip(val pcm16Mono16k: ShortArray) {
         this === other || (other is AudioClip && pcm16Mono16k.contentEquals(other.pcm16Mono16k))
 
     override fun hashCode(): Int = pcm16Mono16k.contentHashCode()
+
+    /**
+     * Duration, not samples.
+     *
+     * The generated `data class` version prints the ShortArray's identity, which is useless, but the
+     * enclosing `TurnOutcome` data classes print `clip=` through *this*, and a synthesised turn
+     * carries tens of thousands of samples. Verifying a corpus hit on the tablet dumped the entire
+     * waveform to logcat twice and buried every other line of the turn. Duration is the thing worth
+     * knowing anyway: it says the voice produced audio rather than silence.
+     */
+    override fun toString(): String =
+        "AudioClip(${pcm16Mono16k.size} samples, ${pcm16Mono16k.size / 16} ms)"
 }
