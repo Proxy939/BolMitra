@@ -61,6 +61,22 @@ tools/aar-check/
 # Research scratchpad. Working notes with unverified claims in progress, not a deliverable.
 latest research.md
 
-# SIH presentation decks — not project source, kept out of the repo.
+# ---------------------------------------------------------------------------------------------
+# Internal working documents.
+#
+# The repository is public so judges can build and run it. These are kept out because they are
+# working material rather than the project: the slide copy, the presentation decks, and the design
+# log with its in-progress and corrected claims. The code, the tests and the tooling are the
+# deliverable and they stay in.
+# ---------------------------------------------------------------------------------------------
+ppt.md
 SIH2026-IDEA-Presentation-Format.pptx
 SMART INDIA HACKATHON 2026.pptx
+*.pptx
+*.ppt
+
+# Device pulls and scratch output from UI automation.
+E:/research/
+*.hprof
+ui*.xml
+screencap*.png
