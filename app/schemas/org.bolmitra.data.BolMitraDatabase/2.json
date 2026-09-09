@@ -1,0 +1,280 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "e8cdf25e0abe74476eecb9f166b94792",
+    "entities": [
+      {
+        "tableName": "phrase",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowid` INTEGER NOT NULL, `lakshya_code` TEXT, `hi_text` TEXT NOT NULL, `hi_normalized` TEXT NOT NULL, `target_text_native` TEXT NOT NULL, `target_text_deva` TEXT NOT NULL, `audio_ref` TEXT, `verified_by` TEXT, `confidence` REAL, `pack_version` TEXT NOT NULL, `is_template` INTEGER NOT NULL, PRIMARY KEY(`rowid`))",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowid",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lakshyaCode",
+            "columnName": "lakshya_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hiText",
+            "columnName": "hi_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hiNormalized",
+            "columnName": "hi_normalized",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetTextNative",
+            "columnName": "target_text_native",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetTextDeva",
+            "columnName": "target_text_deva",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioRef",
+            "columnName": "audio_ref",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "verifiedBy",
+            "columnName": "verified_by",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "packVersion",
+            "columnName": "pack_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isTemplate",
+            "columnName": "is_template",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rowid"
+          ]
+        }
+      },
+      {
+        "tableName": "phrase_fts",
+        "createSql": "CREATE VIRTUAL TABLE IF NOT EXISTS `${TABLE_NAME}` USING FTS4(`hi_normalized` TEXT NOT NULL, tokenize=unicode61, content=`phrase`)",
+        "fields": [
+          {
+            "fieldPath": "hiNormalized",
+            "columnName": "hi_normalized",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": []
+        },
+        "ftsVersion": "FTS4",
+        "ftsOptions": {
+          "tokenizer": "unicode61",
+          "tokenizerArgs": [],
+          "contentTable": "phrase",
+          "languageIdColumnName": "",
+          "matchInfo": "FTS4",
+          "notIndexedColumns": [],
+          "prefixSizes": [],
+          "preferredOrder": "ASC"
+        },
+        "contentSyncTriggers": [
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_phrase_fts_BEFORE_UPDATE BEFORE UPDATE ON `phrase` BEGIN DELETE FROM `phrase_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_phrase_fts_BEFORE_DELETE BEFORE DELETE ON `phrase` BEGIN DELETE FROM `phrase_fts` WHERE `docid`=OLD.`rowid`; END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_phrase_fts_AFTER_UPDATE AFTER UPDATE ON `phrase` BEGIN INSERT INTO `phrase_fts`(`docid`, `hi_normalized`) VALUES (NEW.`rowid`, NEW.`hi_normalized`); END",
+          "CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_phrase_fts_AFTER_INSERT AFTER INSERT ON `phrase` BEGIN INSERT INTO `phrase_fts`(`docid`, `hi_normalized`) VALUES (NEW.`rowid`, NEW.`hi_normalized`); END"
+        ]
+      },
+      {
+        "tableName": "correction_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `phrase_rowid` INTEGER, `hi_text` TEXT NOT NULL, `produced_text` TEXT NOT NULL, `suggested_text` TEXT NOT NULL, `provenance` TEXT NOT NULL, `pack_version` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, `exported_at_ms` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phraseRowId",
+            "columnName": "phrase_rowid",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hiText",
+            "columnName": "hi_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "producedText",
+            "columnName": "produced_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "suggestedText",
+            "columnName": "suggested_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packVersion",
+            "columnName": "pack_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exportedAtMs",
+            "columnName": "exported_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "turn",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `created_at_ms` INTEGER NOT NULL, `language` TEXT NOT NULL, `hi_text` TEXT NOT NULL, `target_native` TEXT NOT NULL, `target_deva` TEXT NOT NULL, `provenance` TEXT, `src` TEXT, `src_en` TEXT, `degrade_reason` TEXT, `typed` INTEGER NOT NULL, `asr_ms` INTEGER NOT NULL, `total_ms` INTEGER NOT NULL, `teacher_audio` TEXT, `output_audio` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hiText",
+            "columnName": "hi_text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetNative",
+            "columnName": "target_native",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetDeva",
+            "columnName": "target_deva",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "src",
+            "columnName": "src",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "srcEn",
+            "columnName": "src_en",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "degradeReason",
+            "columnName": "degrade_reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "typed",
+            "columnName": "typed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "asrMs",
+            "columnName": "asr_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalMs",
+            "columnName": "total_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "teacherAudio",
+            "columnName": "teacher_audio",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "outputAudio",
+            "columnName": "output_audio",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e8cdf25e0abe74476eecb9f166b94792')"
+    ]
+  }
+}

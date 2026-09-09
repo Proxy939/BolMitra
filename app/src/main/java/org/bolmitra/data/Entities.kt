@@ -84,3 +84,57 @@ data class CorrectionOutboxEntity(
     /** Set once handed to a prep station over USB / Wi-Fi Direct, so it is not sent twice. */
     @ColumnInfo(name = "exported_at_ms") val exportedAtMs: Long? = null,
 )
+
+/**
+ * One completed turn, kept so the History and Recordings lists show what actually happened.
+ *
+ * ### Why this is a table and not a list in the UI
+ *
+ * The History panel used to render five hardcoded `ChatHistoryItem`s whose Mundari was invented.
+ * A teacher scrolling back to check what the class heard was being shown fiction. Persisting the
+ * real turn is the only way that panel can be honest, and it is also what a bilingual worksheet
+ * built "from the chats" has to read.
+ *
+ * ### Provenance travels with the row
+ *
+ * [provenance] is stored, never re-derived. §4.5 requires it to be decided at lookup and carried,
+ * and a history row is the furthest downstream that rule has to hold: re-deriving it later from
+ * the text would be guessing. [src] / [srcEn] come with a `CORPUS` row so the citation survives
+ * into the history view, which is what lets a reviewer judge an old turn at all.
+ *
+ * ### Audio is referenced, not embedded
+ *
+ * The clips live as WAV files under `filesDir/recordings` and only their names are here. A BLOB
+ * column would put tens of megabytes of PCM in the same file as the correction outbox, and Room
+ * would rewrite it on every schema change. §6.9.4 still applies to the files themselves: they are
+ * local, and nothing exports them.
+ */
+@Entity(tableName = "turn")
+data class TurnEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** Wall clock, for display. Not `elapsedRealtime` — that is meaningless across reboots. */
+    @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
+    /** `TargetLanguage.name`, so a history list can be filtered per language. */
+    @ColumnInfo(name = "language") val language: String,
+    /** What the tablet heard, or what the teacher typed. */
+    @ColumnInfo(name = "hi_text") val hiText: String,
+    /** What the class SAW — Ol Chiki for Santali, Devanagari for Mundari. May be blank. */
+    @ColumnInfo(name = "target_native") val targetNative: String,
+    /** What the voice was given. Devanagari by construction; see the TTS contract. */
+    @ColumnInfo(name = "target_deva") val targetDeva: String,
+    /** `Provenance.name`, or null where the turn produced no translation at all. */
+    @ColumnInfo(name = "provenance") val provenance: String?,
+    /** Corpus citation, present only for `CORPUS` rows. */
+    @ColumnInfo(name = "src") val src: String? = null,
+    @ColumnInfo(name = "src_en") val srcEn: String? = null,
+    /** `DegradeReason.name` when the turn did not produce audio, for an honest history row. */
+    @ColumnInfo(name = "degrade_reason") val degradeReason: String? = null,
+    /** True when this came from the keyboard rather than the microphone. */
+    @ColumnInfo(name = "typed") val typed: Boolean = false,
+    @ColumnInfo(name = "asr_ms") val asrMs: Long = 0,
+    @ColumnInfo(name = "total_ms") val totalMs: Long = 0,
+    /** File name under `recordings/` holding what the teacher said. Null for a typed turn. */
+    @ColumnInfo(name = "teacher_audio") val teacherAudio: String? = null,
+    /** File name under `recordings/` holding what the class heard. Null when nothing was spoken. */
+    @ColumnInfo(name = "output_audio") val outputAudio: String? = null,
+)

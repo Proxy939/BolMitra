@@ -56,6 +56,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -66,12 +70,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.bolmitra.data.TurnEntity
+import org.bolmitra.data.TurnRecorder
+import org.bolmitra.data.provenanceOrNull
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.speech.AudioCapture
 import org.bolmitra.speech.LiveTurnEngine
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.speech.UtteranceSegmenter
+import org.bolmitra.speech.WavFile
+import org.bolmitra.speech.WavPlayer
+import org.bolmitra.ui.theme.BolmitraColors
 import org.bolmitra.ui.common.ConcentricCircleButton
 import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.common.SoundwaveVisualizer
@@ -146,13 +156,10 @@ internal fun formatMmSs(ms: Long): String {
 
 enum class TurnPhase { IDLE, LOADING, LISTENING, THINKING }
 
-data class ChatHistoryItem(
-    val id: String,
-    val hiText: String,
-    val nativeText: String,
-    val time: String,
-    val isToday: Boolean,
-)
+// `ChatHistoryItem` lived here: a five-row hardcoded list whose Mundari ("Buku kholoko", "Apeko enda
+// jokeda") was invented, carried no provenance, and stored `isToday` as a boolean fixed at
+// construction. It is gone — History and Recordings read `TurnEntity` from the database now, so the
+// panel shows what the class actually heard and can label how much to trust it.
 
 /**
  * Live Class Screen — Exact replica of Image 1.
@@ -204,15 +211,19 @@ fun LiveClassPane(
     var historyTab by remember { mutableStateOf(0) } // 0: History, 1: Recordings
     var historySearch by remember { mutableStateOf("") }
 
-    val historyItems = remember {
-        listOf(
-            ChatHistoryItem("1", "किताब खोलो", "Buku kholoko", "10:45 AM", true),
-            ChatHistoryItem("2", "सब लोग बैठ जाओ", "Apeko enda jokeda", "10:42 AM", true),
-            ChatHistoryItem("3", "यह क्या है?", "Ida enej mena?", "10:38 AM", true),
-            ChatHistoryItem("4", "गिनती बोलो", "Ginti ko menkana", "04:12 PM", false),
-            ChatHistoryItem("5", "अपना नाम बताओ", "Nin enej mena", "04:08 PM", false),
-        )
-    }
+    /**
+     * Real turns from the database, replacing five hardcoded rows whose Mundari was invented.
+     *
+     * [historyReloads] is bumped after every completed turn and after a search edit, which is what
+     * re-runs the read. A Flow from the DAO would be tidier, but this panel is read in exactly two
+     * situations — a turn finished, or the teacher typed in the search box — and both are already
+     * places the pane knows about.
+     */
+    val recorder = remember { TurnRecorder(context) }
+    var historyRows by remember { mutableStateOf<List<TurnEntity>>(emptyList()) }
+    var recordingRows by remember { mutableStateOf<List<TurnEntity>>(emptyList()) }
+    var historyReloads by remember { mutableStateOf(0) }
+    var playingRecording by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(engine) {
         result = null
@@ -220,6 +231,14 @@ fun LiveClassPane(
         phase = TurnPhase.LOADING
         loadState = engine.ensureLoaded()
         phase = TurnPhase.IDLE
+    }
+
+    // Loads History and Recordings. Re-keyed on language because a Santali Ol Chiki line has no
+    // business in a Mundari lesson's history, and on historyReloads so a finished turn appears
+    // without the teacher navigating away and back.
+    LaunchedEffect(language, historyReloads, historySearch) {
+        historyRows = recorder.search(language, historySearch)
+        recordingRows = recorder.recordings(language)
     }
 
     // Drives the mm:ss readout. Keyed on sessionActive so it does not tick when the mic is closed;
@@ -348,7 +367,13 @@ fun LiveClassPane(
                     // The mic is closed for the whole of this call, which is what keeps the tablet
                     // from hearing its own translation and translating it back. runTurn plays the
                     // audio synchronously, so returning from it means the room is quiet again.
-                    result = engine.runTurn(pcm, turnStart)
+                    val turn = engine.runTurn(pcm, turnStart)
+                    result = turn
+
+                    // Archived AFTER the class has heard it, never before. Persistence is not on the
+                    // 3 s critical path and must not be: a slow disk would otherwise delay a lesson.
+                    recorder.record(language, turn, teacherPcm = pcm, ttsSampleRate = engine.ttsSampleRate)
+                    historyReloads++
                 }
             } catch (e: CancellationException) {
                 // Rethrown, never turned into `error`: the composition is going away, so there is
@@ -390,7 +415,12 @@ fun LiveClassPane(
                     loadState = engine.loadState
                     return@launch
                 }
-                result = engine.runTextTurn(hindi, SystemClock.elapsedRealtime())
+                val turn = engine.runTextTurn(hindi, SystemClock.elapsedRealtime())
+                result = turn
+                // No teacher audio for a typed turn — there was no microphone involved, and a
+                // Recordings row with a play button that produced nothing would be a lie.
+                recorder.record(language, turn, teacherPcm = null, ttsSampleRate = engine.ttsSampleRate)
+                historyReloads++
             } catch (e: Throwable) {
                 error = e.message ?: e::class.java.simpleName
             } finally {
@@ -425,6 +455,40 @@ fun LiveClassPane(
                         (result?.note ?: "the audio is no longer available")
                 }
             } finally {
+                speakingAudio = false
+            }
+        }
+    }
+
+    /**
+     * Plays a saved recording straight off disk.
+     *
+     * This is what makes the Recordings tab real. It deliberately does NOT go through
+     * `playPhraseAudio` below: that resolves a phrase through the phrasebook and re-synthesises,
+     * which for any turn that came from T1 finds nothing and plays silence. A WAV that was written at
+     * the time is the only honest record of what the room actually heard.
+     *
+     * The stored sample rate is used, not a constant: the teacher's clip is 16 kHz and the voice's is
+     * whatever VITS reports, and playing either at the other's rate is audibly wrong.
+     */
+    fun playSavedAudio(turn: TurnEntity, teacherSide: Boolean) {
+        if (speakingAudio) return
+        val file = recorder.audioFile(if (teacherSide) turn.teacherAudio else turn.outputAudio)
+            ?: return
+        scope.launch {
+            speakingAudio = true
+            playingRecording = turn.id
+            try {
+                withContext(Dispatchers.Default) {
+                    val decoded = WavFile.read(file) ?: return@withContext
+                    // A dedicated track rather than the engine's player: RenderingAudioPlayer is
+                    // fixed to the TTS rate at construction, and these files are not all that rate.
+                    WavPlayer.play(decoded)
+                }
+            } catch (e: Throwable) {
+                error = e.message ?: e::class.java.simpleName
+            } finally {
+                playingRecording = null
                 speakingAudio = false
             }
         }
@@ -1044,67 +1108,131 @@ fun LiveClassPane(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Search input
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
-                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Search, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
+                    // Search input. A real TextField now — this was a Text, so the state it wrote
+                    // into could never become non-empty and the filter was decoration.
+                    OutlinedTextField(
+                        value = historySearch,
+                        onValueChange = { historySearch = it },
+                        placeholder = {
                             Text(
                                 "Search previous chats...",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF94A3B8)),
+                                fontSize = 11.5.sp,
+                                color = Color(0xFF94A3B8),
                             )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF2EAF3B),
+                            unfocusedBorderColor = Color(0xFFE2E8F0),
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    val rows = if (historyTab == 0) historyRows else recordingRows
+
+                    if (rows.isEmpty()) {
+                        // An empty state rather than an empty box. Before, five fabricated rows made
+                        // this look populated on a tablet that had never been used.
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = when {
+                                    historySearch.isNotBlank() -> "Nothing matches \u201C$historySearch\u201D"
+                                    historyTab == 1 -> "No recordings yet.\nSpoken turns are saved here."
+                                    else -> "No translations yet.\nTap the mic to start."
+                                },
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 11.5.sp,
+                                    color = Color(0xFF94A3B8),
+                                ),
+                            )
+                        }
+                    } else {
+                        // Grouped by day off the stored timestamp, so "Today" means today rather than
+                        // a hardcoded header over hardcoded rows.
+                        val grouped = rows.groupBy { dayLabelFor(it.createdAtMs) }
+                        // A plain Column, NOT a LazyColumn.
+                        //
+                        // This was `LazyColumn(Modifier.weight(1f, fill = false))`, and it rendered at
+                        // zero height — the history rows were invisible even when the list was the
+                        // five hardcoded ones, which is why nobody noticed the data was fake. The
+                        // whole pane sits inside `HomeScreen`'s `verticalScroll`, so the parent has
+                        // unbounded height, and `weight` inside an unbounded parent resolves to
+                        // nothing. A lazy list is the wrong tool here anyway: the query is capped at
+                        // 50 rows and nesting a scroller inside a scroller fights the gesture.
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            grouped.forEach { (day, dayRows) ->
+                                Text(
+                                    day,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B),
+                                    ),
+                                )
+                                dayRows.forEach { row ->
+                                    if (historyTab == 0) {
+                                        HistoryRow(
+                                            row = row,
+                                            onPlay = {
+                                                // Prefer the saved output clip; fall back to the
+                                                // phrasebook only when this turn saved no audio.
+                                                if (row.outputAudio != null) {
+                                                    playSavedAudio(row, teacherSide = false)
+                                                } else {
+                                                    playPhraseAudio(row.hiText)
+                                                }
+                                            },
+                                        )
+                                    } else {
+                                        RecordingRow(
+                                            row = row,
+                                            isPlaying = playingRecording == row.id,
+                                            hasTeacher = row.teacherAudio != null,
+                                            hasOutput = row.outputAudio != null,
+                                            onPlayTeacher = { playSavedAudio(row, teacherSide = true) },
+                                            onPlayOutput = { playSavedAudio(row, teacherSide = false) },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
                     Spacer(Modifier.height(10.dp))
 
-                    // History list
-                    LazyColumn(
-                        modifier = Modifier.weight(1f, fill = false),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        item {
-                            Text(
-                                "Today",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF64748B)),
-                            )
-                        }
-                        items(historyItems.filter { it.isToday }) { item ->
-                            HistoryRow(item, onPlay = { playPhraseAudio(item.hiText) })
-                        }
-
-                        item {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "Yesterday",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF64748B)),
-                            )
-                        }
-                        items(historyItems.filter { !it.isToday }) { item ->
-                            HistoryRow(item, onPlay = { playPhraseAudio(item.hiText) })
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // View all history button
+                    // Honest count instead of a link that did nothing.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.White, RoundedCornerShape(10.dp))
                             .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
-                            .clickable { /* view history */ }
                             .padding(vertical = 9.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "View all history →",
+                            if (historyTab == 0) {
+                                "${historyRows.size} saved ${if (historyRows.size == 1) "turn" else "turns"}"
+                            } else {
+                                "${recordingRows.size} ${if (recordingRows.size == 1) "recording" else "recordings"}"
+                            },
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF1E293B)),
                         )
                     }
@@ -1445,8 +1573,39 @@ private fun TranscriptHalf(
     }
 }
 
+/** `HH:mm` for a stored wall-clock timestamp. */
+private fun clockLabelFor(atMs: Long): String =
+    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(atMs))
+
+/**
+ * "Today" / "Yesterday" / a date, from the stored timestamp.
+ *
+ * Computed rather than stored as a boolean: the old `ChatHistoryItem.isToday` was fixed at
+ * construction, so a row created yesterday would still have claimed "Today" after midnight.
+ */
+private fun dayLabelFor(atMs: Long): String {
+    val row = Calendar.getInstance().apply { timeInMillis = atMs }
+    val now = Calendar.getInstance()
+    fun sameDay(a: Calendar, b: Calendar) =
+        a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+
+    if (sameDay(row, now)) return "Today"
+    now.add(Calendar.DAY_OF_YEAR, -1)
+    if (sameDay(row, now)) return "Yesterday"
+    return SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(atMs))
+}
+
+/**
+ * One saved turn in the History list.
+ *
+ * Shows the provenance, which the fabricated version could not: every old row was untagged, so a
+ * teacher scrolling back had no way to tell a reviewed phrase from a machine guess. The target text
+ * goes through [OlChikiFont.annotate] because for Santali it is Ol Chiki, and the bundled face carries
+ * no Devanagari — applying it to the whole string would tofu a Mundari row.
+ */
 @Composable
-private fun HistoryRow(item: ChatHistoryItem, onPlay: () -> Unit) {
+private fun HistoryRow(row: TurnEntity, onPlay: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1468,15 +1627,15 @@ private fun HistoryRow(item: ChatHistoryItem, onPlay: () -> Unit) {
             ) {
                 Icon(
                     Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = "Play this translation again",
                     tint = Color(0xFF16A34A),
                     modifier = Modifier.size(16.dp),
                 )
             }
 
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    item.hiText,
+                    row.hiText.ifBlank { "(nothing recognised)" },
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 12.5.sp,
@@ -1486,7 +1645,11 @@ private fun HistoryRow(item: ChatHistoryItem, onPlay: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    item.nativeText,
+                    text = OlChikiFont.annotate(
+                        row.targetNative.ifBlank {
+                            row.degradeReason?.let { reasonLabel(it) } ?: "—"
+                        },
+                    ),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 11.sp,
                         color = Color(0xFF64748B),
@@ -1497,9 +1660,168 @@ private fun HistoryRow(item: ChatHistoryItem, onPlay: () -> Unit) {
             }
         }
 
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                clockLabelFor(row.createdAtMs),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFF94A3B8)),
+            )
+            row.provenanceOrNull?.let {
+                Spacer(Modifier.height(2.dp))
+                ProvenanceDot(it)
+            }
+        }
+    }
+}
+
+/**
+ * One recording, with separate playback for the two sides of a turn.
+ *
+ * Two buttons rather than one because they answer different questions: "what did I say" checks the
+ * microphone and the ASR, "what did the class hear" checks the translation and the voice. A single
+ * button would force a teacher to guess which half was wrong.
+ */
+@Composable
+private fun RecordingRow(
+    row: TurnEntity,
+    isPlaying: Boolean,
+    hasTeacher: Boolean,
+    hasOutput: Boolean,
+    onPlayTeacher: () -> Unit,
+    onPlayOutput: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isPlaying) Color(0xFFF0FDF4) else Color.White,
+                RoundedCornerShape(10.dp),
+            )
+            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                row.hiText.ifBlank { "(nothing recognised)" },
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = Color(0xFF1E293B),
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                clockLabelFor(row.createdAtMs),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFF94A3B8)),
+            )
+        }
+
+        if (row.targetNative.isNotBlank()) {
+            Text(
+                text = OlChikiFont.annotate(row.targetNative),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, color = Color(0xFF64748B)),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Each button is present only when its file is, so no button can fail to play.
+            if (hasTeacher) {
+                RecordingChip(
+                    label = if (row.typed) "Typed" else "You",
+                    enabled = true,
+                    onClick = onPlayTeacher,
+                )
+            }
+            if (hasOutput) {
+                RecordingChip(label = "Class", enabled = true, onClick = onPlayOutput)
+            }
+            if (isPlaying) {
+                Text(
+                    "Playing…",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        color = Color(0xFF16A34A),
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordingChip(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(Color(0xFFDCFCE7), RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Filled.PlayArrow,
+            contentDescription = "Play the $label side of this turn",
+            tint = Color(0xFF16A34A),
+            modifier = Modifier.size(12.dp),
+        )
         Text(
-            item.time,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFF94A3B8)),
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF166534),
+            ),
         )
     }
+}
+
+/**
+ * Compact provenance marker for a list row.
+ *
+ * A dot plus its initial, not a dot alone: §4.5 requires a glyph and a word as well as a hue, and a
+ * history list has no room for the full [ProvenanceChip]. The letter carries the meaning if the
+ * colour cannot.
+ */
+@Composable
+private fun ProvenanceDot(provenance: Provenance) {
+    val (color, letter) = when (provenance) {
+        Provenance.VERIFIED -> BolmitraColors.Verified to "V"
+        Provenance.CORPUS -> BolmitraColors.Corpus to "C"
+        Provenance.APPROXIMATE -> BolmitraColors.Approximate to "A"
+        Provenance.MACHINE -> BolmitraColors.Unavailable to "M"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Text(
+            letter,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = color,
+            ),
+        )
+    }
+}
+
+/** Short, teacher-facing text for a stored degrade reason. */
+private fun reasonLabel(name: String): String = when (name) {
+    "NO_SPEECH_RECOGNISED" -> "nothing recognised"
+    "NO_TRANSLATION_AVAILABLE" -> "no translation available"
+    "BUDGET_EXHAUSTED" -> "ran out of time"
+    "AUDIO_ASSET_MISSING" -> "text only — no audio"
+    "SYNTHESIS_FAILED" -> "text only — voice failed"
+    else -> name.lowercase().replace('_', ' ')
 }

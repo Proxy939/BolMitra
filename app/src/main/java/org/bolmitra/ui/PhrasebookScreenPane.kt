@@ -20,10 +20,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.filled.Add
 import org.bolmitra.ui.common.BolMitraIcons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,23 +55,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
+import org.bolmitra.phrasebook.PhrasebookBrowser
+import org.bolmitra.phrasebook.Provenance
+import org.bolmitra.phrasebook.SantaliGlossary
 import org.bolmitra.speech.LiveTurnEngine
 import org.bolmitra.speech.TargetLanguage
+import org.bolmitra.ui.common.OlChikiFont
+import org.bolmitra.ui.theme.BolmitraColors
 
-data class PhraseCategory(val name: String, val count: Int, val emoji: String)
-
-data class PhraseItemModel(
-    val id: String,
-    val iconEmoji: String,
-    val hiText: String,
-    val enText: String,
-    val nativeText: String,
-    val nativeScript: String,
-    var isFavorite: Boolean = false,
-    val exampleHi: String = "",
-    val exampleEn: String = "",
-    val exampleNative: String = "",
-)
+// `PhraseCategory` and `PhraseItemModel` lived here.
+//
+// `PhraseItemModel` held eight hand-written rows whose Mundari was INVENTED — बेसो, दाड़ा,
+// सेंते रे सुतु, मिते होड़ो, जोहा! and an example sentence for each — displayed with no provenance
+// marker at all. The project's first invariant is that a tribal-language string must come from a
+// named speaker or a labelled machine translation, and those came from neither. `PhraseCategory`
+// carried thirteen invented counts summing to 203 for a screen that showed eight rows.
+//
+// Both are replaced by `PhrasebookBrowser.Row` / `.Category`, which are projections of DemoSeed and
+// the Santali glossary. Nothing on this screen is authored here any more.
 
 /**
  * Phrasebook Screen — Exact replica of Image 4.
@@ -81,86 +83,93 @@ fun PhrasebookScreenPane(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val engine = remember { LiveTurnEngine.get(context) }
-    val phrasebook = remember { InMemoryPhrasebook(DemoSeed.phrases) }
 
     var selectedLang by remember { mutableStateOf(TargetLanguage.MUNDARI) }
     var selectedCategoryIndex by remember { mutableStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var quickAddText by remember { mutableStateOf("") }
 
-    val categories = remember {
-        listOf(
-            PhraseCategory("All Phrases", 120, "⊞"),
-            PhraseCategory("Greetings", 15, "👋"),
-            PhraseCategory("Classroom Instructions", 22, "👥"),
-            PhraseCategory("Questions", 18, "❓"),
-            PhraseCategory("Numbers", 20, "🔢"),
-            PhraseCategory("Colors", 12, "🎨"),
-            PhraseCategory("Family & People", 16, "👨‍👩‍👧"),
-            PhraseCategory("Animals", 14, "🐾"),
-            PhraseCategory("Food & Fruits", 13, "🍎"),
-            PhraseCategory("Daily Activities", 18, "🏃"),
-            PhraseCategory("Positive Encouragement", 10, "❤️"),
-            PhraseCategory("Common Responses", 17, "💬"),
-            PhraseCategory("Emergency / Help", 8, "⚠️"),
+    // Per-language engine, so playback uses the voice for the language being browsed. The screen
+    // previously held `LiveTurnEngine.get(context)` with no language, i.e. always the default.
+    val engine = remember(selectedLang) { LiveTurnEngine.get(context, selectedLang) }
+
+    /**
+     * The real rows. Loaded off the main thread because for Santali this parses a 5,151-row asset and
+     * expands it per Hindi alias.
+     */
+    var allRows by remember { mutableStateOf<List<PhrasebookBrowser.Row>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(selectedLang) {
+        loading = true
+        selectedCategoryIndex = 0
+        allRows = withContext(Dispatchers.Default) {
+            PhrasebookBrowser.rows(context, selectedLang)
+        }
+        loading = false
+    }
+
+    val categories = remember(allRows) { PhrasebookBrowser.categories(allRows) }
+    val activeCategory = categories.getOrNull(selectedCategoryIndex)
+    val phrasesList = remember(allRows, selectedCategoryIndex, searchQuery, categories) {
+        PhrasebookBrowser.filter(allRows, activeCategory, searchQuery)
+    }
+
+    // Kept as an id so the selection survives a filter change rather than snapping back to the top.
+    var selectedRowId by remember(selectedLang) { mutableStateOf<Long?>(null) }
+    val selectedPhrase = phrasesList.firstOrNull { it.id == selectedRowId } ?: phrasesList.firstOrNull()
+
+    /** T0 lookup for playback only. Same construction LiveTurnEngine uses, so the same rows match. */
+    val phrasebook = remember(selectedLang, allRows) {
+        InMemoryPhrasebook(
+            DemoSeed.phrasesFor(selectedLang) +
+                SantaliGlossary.phrasesFor(context, selectedLang),
         )
     }
 
-    val phrasesList = remember {
-        listOf(
-            PhraseItemModel(
-                "1", "🪑", "बैठ जाओ", "Sit down", "बेसो", "Beso (Sit down)", true,
-                "सब लोग बैठ जाओ।", "Everyone sit down.", "साबे बेसो। (Sabe beso.)",
-            ),
-            PhraseItemModel(
-                "2", "🧍", "खड़े हो जाओ", "Stand up", "दाड़ा", "Daada (Stand up)", false,
-                "सभी बच्चे खड़े हो जाओ।", "All children stand up.", "साबे दाड़ा।",
-            ),
-            PhraseItemModel(
-                "3", "👂", "ध्यान से सुनो", "Listen carefully", "सेंते रे सुतु", "Sente re sutu", false,
-                "मेरी बात ध्यान से सुनो।", "Listen to me carefully.", "सेंते रे सुतु।",
-            ),
-            PhraseItemModel(
-                "4", "🔄", "दोहराओ", "Repeat", "मिते होड़ो", "Mite hodo", false,
-                "मेरे बाद दोहराओ।", "Repeat after me.", "मिते होड़ो।",
-            ),
-            PhraseItemModel(
-                "5", "👤", "मेरा नाम ... है", "My name is ...", "एन्हे नाव ... एना", "Enhe naw ... ena", false,
-                "मेरा नाम सोमा है।", "My name is Soma.", "एन्हे नाव सोमा एना।",
-            ),
-            PhraseItemModel(
-                "6", "😊", "तुम कैसे हो?", "How are you?", "निंन्हे काना?", "Ninhe kana?", false,
-                "आप सब कैसे हैं?", "How are you all?", "निंन्हे काना?",
-            ),
-            PhraseItemModel(
-                "7", "👍", "बहुत अच्छा", "Very good", "बाहा चोके", "Baha choke", false,
-                "आपने बहुत अच्छा लिखा।", "You wrote very well.", "बाहा चोके।",
-            ),
-            PhraseItemModel(
-                "8", "👏", "शाबाश!", "Well done!", "जोहा!", "Joha!", false,
-                "शाबाश बच्चों!", "Well done children!", "जोहा!",
-            ),
-        )
-    }
+    var speaking by remember { mutableStateOf(false) }
+    var speakNote by remember { mutableStateOf<String?>(null) }
 
-    var selectedPhrase by remember { mutableStateOf(phrasesList.first()) }
-    var speedOption by remember { mutableStateOf(1) } // 0: Slow, 1: Normal, 2: Repeat
-
-    fun speakPhrase(hi: String) {
+    /**
+     * Speaks a row, and says so when it cannot.
+     *
+     * The old version resolved a ref and then did nothing if there was none — a silent no-op with no
+     * feedback, which on this screen was most rows. A glossary row has `audioRef == null` by
+     * construction (no pack audio exists for it), so synthesising from its own Devanagari is the only
+     * way to hear it. That is the same thing `TurnOrchestrator` does for a T0 hit with no asset, and
+     * it changes only the voice, never the words.
+     */
+    fun speakRow(row: PhrasebookBrowser.Row) {
+        if (speaking) return
         scope.launch {
-            val hit = phrasebook.lookup(hi)
-            withContext(Dispatchers.Default) {
-                when (engine.ensureLoaded()) {
-                    is LiveTurnEngine.LoadState.Ready -> {
-                        val ref = hit?.phrase?.audioRef
-                        val player = engine.audioPlayer
-                        if (player != null && ref != null) {
-                            player.play(ref)
-                        }
+            speaking = true
+            speakNote = null
+            try {
+                withContext(Dispatchers.Default) {
+                    if (engine.ensureLoaded() !is LiveTurnEngine.LoadState.Ready) {
+                        speakNote = "The voice for ${selectedLang.englishName} is not on this tablet."
+                        return@withContext
                     }
-                    else -> Unit
+                    val player = engine.audioPlayer
+                    if (player == null) {
+                        speakNote = "No audio player available."
+                        return@withContext
+                    }
+                    val ref = row.audioRef
+                    val played = when {
+                        ref != null -> player.play(ref)
+                        row.targetDeva.isNotBlank() -> {
+                            val clip = engine.synthesize(row.targetDeva)
+                            clip != null && player.play(clip)
+                        }
+                        else -> false
+                    }
+                    if (!played) speakNote = "Could not play this phrase."
                 }
+            } catch (e: Throwable) {
+                speakNote = e.message ?: e::class.java.simpleName
+            } finally {
+                speaking = false
             }
         }
     }
@@ -195,15 +204,38 @@ fun PhrasebookScreenPane(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Icon(Icons.Filled.Search, null, Modifier.size(16.dp), tint = Color(0xFF94A3B8))
-                    Text(
-                        if (searchQuery.isEmpty()) "Search phrases... (e.g., greeting, number, sit down)" else searchQuery,
-                        style = MaterialTheme.typography.bodySmall.copy(
+                    // A real input. This was a Text, so `searchQuery` could never become non-empty
+                    // and the filter below it was unreachable.
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(
                             fontSize = 12.sp,
-                            color = if (searchQuery.isEmpty()) Color(0xFF94A3B8) else Color(0xFF1E293B),
+                            color = Color(0xFF1E293B),
                         ),
                         modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    "Search Hindi, English or ${selectedLang.englishName}…",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF94A3B8),
+                                    ),
+                                )
+                            }
+                            inner()
+                        },
                     )
-                    Text("⇄", color = Color(0xFF16A34A), fontSize = 14.sp)
+                    if (searchQuery.isNotEmpty()) {
+                        Icon(
+                            Icons.Filled.Clear,
+                            contentDescription = "Clear search",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(14.dp).clickable { searchQuery = "" },
+                        )
+                    }
                 }
             },
         )
@@ -296,7 +328,14 @@ fun PhrasebookScreenPane(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "All Phrases (120)",
+                            // Real counts. The literal "(120)" described nothing.
+                            when {
+                                loading -> "Loading…"
+                                searchQuery.isNotBlank() ->
+                                    "${phrasesList.size} of ${allRows.size} match"
+                                else ->
+                                    "${activeCategory?.name ?: "All Phrases"} (${phrasesList.size})"
+                            },
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.5.sp,
@@ -309,8 +348,17 @@ fun PhrasebookScreenPane(
                                 .background(Color(0xFFF1F5F9), RoundedCornerShape(6.dp))
                                 .padding(horizontal = 6.dp, vertical = 3.dp),
                         ) {
-                            Text("Sort: Most Used", fontSize = 10.sp, color = Color(0xFF475569))
-                            Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(12.dp), tint = Color(0xFF475569))
+                            // Was "Sort: Most Used" — there is no usage counter in the app, so it
+                            // described a sort that did not exist. This states the real order.
+                            Text(
+                                if (selectedLang == TargetLanguage.SANTALI) {
+                                    "Seeded first, then corpus"
+                                } else {
+                                    "Pack order"
+                                },
+                                fontSize = 10.sp,
+                                color = Color(0xFF475569),
+                            )
                         }
                     }
 
@@ -320,8 +368,29 @@ fun PhrasebookScreenPane(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        items(phrasesList) { phrase ->
-                            val isSelected = selectedPhrase.id == phrase.id
+                        if (phrasesList.isEmpty() && !loading) {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        if (searchQuery.isNotBlank()) {
+                                            "Nothing matches \u201C$searchQuery\u201D"
+                                        } else {
+                                            "No phrasebook for ${selectedLang.englishName} on this " +
+                                                "tablet yet."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF94A3B8),
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        items(phrasesList, key = { it.id }) { phrase ->
+                            val isSelected = selectedPhrase?.id == phrase.id
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -334,7 +403,7 @@ fun PhrasebookScreenPane(
                                         if (isSelected) Color(0xFFD6EFE0) else Color(0xFFF1F5F9),
                                         RoundedCornerShape(10.dp),
                                     )
-                                    .clickable { selectedPhrase = phrase }
+                                    .clickable { selectedRowId = phrase.id }
                                     .padding(horizontal = 10.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -344,7 +413,6 @@ fun PhrasebookScreenPane(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     modifier = Modifier.weight(1f),
                                 ) {
-                                    Text(phrase.iconEmoji, fontSize = 18.sp)
                                     Column {
                                         Text(
                                             phrase.hiText,
@@ -353,13 +421,19 @@ fun PhrasebookScreenPane(
                                                 fontSize = 13.sp,
                                                 color = Color(0xFF1E293B),
                                             ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
-                                            phrase.enText,
+                                            // The English the corpus actually translated, where there
+                                            // is one. Seeded rows have none, so this is not invented.
+                                            phrase.english ?: phrase.lakshyaCode ?: "",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 fontSize = 11.sp,
                                                 color = Color(0xFF64748B),
                                             ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                 }
@@ -369,14 +443,23 @@ fun PhrasebookScreenPane(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text("मुंडारी", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color(0xFF94A3B8)))
                                         Text(
-                                            phrase.nativeText,
+                                            // Follows the selected language. This was the literal
+                                            // "मुंडारी" even when Santali was selected.
+                                            selectedLang.endonym,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, color = Color(0xFF94A3B8)),
+                                        )
+                                        Text(
+                                            // annotate() styles only the Ol Chiki runs; the bundled
+                                            // face has no Devanagari and would tofu a Mundari row.
+                                            text = OlChikiFont.annotate(phrase.targetNative),
                                             style = MaterialTheme.typography.bodyMedium.copy(
                                                 fontWeight = FontWeight.SemiBold,
                                                 fontSize = 12.sp,
                                                 color = Color(0xFF166534),
                                             ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
 
@@ -384,21 +467,17 @@ fun PhrasebookScreenPane(
                                     Box(
                                         modifier = Modifier
                                             .size(24.dp)
-                                            .clickable { speakPhrase(phrase.hiText) },
+                                            .clickable { speakRow(phrase) },
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Text("🔊", fontSize = 13.sp)
                                     }
 
-                                    // Favorite star
-                                    Icon(
-                                        imageVector = if (phrase.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                        contentDescription = null,
-                                        tint = if (phrase.isFavorite) Color(0xFFF97316) else Color(0xFFCBD5E1),
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable { phrase.isFavorite = !phrase.isFavorite },
-                                    )
+                                    // Was a favourite star that flipped a `var` inside a data class
+                                    // held in a `remember`ed list — it did not recompose reliably and
+                                    // was never persisted anywhere. The space now carries the one
+                                    // thing this screen was missing: how much to trust the row.
+                                    ProvenanceMark(phrase.provenance)
                                 }
                             }
                         }
@@ -433,7 +512,18 @@ fun PhrasebookScreenPane(
                                 color = Color(0xFF1E293B),
                             ),
                         )
-                        Icon(Icons.Filled.Favorite, null, Modifier.size(16.dp), tint = Color(0xFFEF4444))
+                        // Was a decorative heart left over from the favourites feature. Replaced with
+                        // the count, which is information.
+                        selectedPhrase?.let {
+                            Text(
+                                "${phrasesList.indexOfFirst { r -> r.id == it.id } + 1} of " +
+                                    "${phrasesList.size}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8),
+                                ),
+                            )
+                        }
                     }
 
                     // Hindi Card
@@ -451,15 +541,15 @@ fun PhrasebookScreenPane(
                         ) {
                             Column {
                                 Text("Hindi (Teacher says)", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFF166534), fontWeight = FontWeight.SemiBold))
-                                Text(selectedPhrase.hiText, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1E293B)))
-                                Text(selectedPhrase.enText, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF64748B)))
+                                Text(selectedPhrase?.hiText ?: "—", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF1E293B)))
+                                Text(selectedPhrase?.english ?: "", style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF64748B)))
                             }
 
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .background(Color(0xFFF97316), CircleShape)
-                                    .clickable { speakPhrase(selectedPhrase.hiText) },
+                                    .clickable { selectedPhrase?.let { speakRow(it) } },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text("🔊", fontSize = 16.sp)
@@ -485,17 +575,33 @@ fun PhrasebookScreenPane(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column {
-                                Text("Mundari (Students hear)", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFFC2410C), fontWeight = FontWeight.SemiBold))
-                                Text(selectedPhrase.nativeText, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF14532D)))
-                                Text(selectedPhrase.nativeScript, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF15803D)))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${selectedLang.englishName} (Students hear)",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFFC2410C), fontWeight = FontWeight.SemiBold),
+                                )
+                                Text(
+                                    text = OlChikiFont.annotate(selectedPhrase?.targetNative ?: "—"),
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF14532D)),
+                                )
+                                // The Devanagari the voice is actually given. For Santali this differs
+                                // from the line above, which is Ol Chiki — showing both is what lets a
+                                // reviewer see the transliteration that feeds the speaker.
+                                selectedPhrase?.targetDeva
+                                    ?.takeIf { it.isNotBlank() && it != selectedPhrase?.targetNative }
+                                    ?.let {
+                                        Text(
+                                            it,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF15803D)),
+                                        )
+                                    }
                             }
 
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .background(Color(0xFFF97316), CircleShape)
-                                    .clickable { speakPhrase(selectedPhrase.hiText) },
+                                    .clickable { selectedPhrase?.let { speakRow(it) } },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text("🔊", fontSize = 16.sp)
@@ -503,17 +609,32 @@ fun PhrasebookScreenPane(
                         }
                     }
 
-                    // Playback speed options: Slow / Normal / Repeat
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        SpeedButton("🐢 Slow", isSelected = speedOption == 0) { speedOption = 0 }
-                        SpeedButton("▶ Normal", isSelected = speedOption == 1) { speedOption = 1 }
-                        SpeedButton("🔁 Repeat", isSelected = speedOption == 2) { speedOption = 2 }
+                    // Was three Slow/Normal/Repeat pills that set a `speedOption` nothing read — the
+                    // TTS speed parameter was never plumbed, so all three did the same thing. The
+                    // space now carries the provenance, which is the claim a teacher needs.
+                    selectedPhrase?.let { row ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            ProvenanceChip(row.provenance)
+                            if (row.isPlaceholder) {
+                                // A "Verified" chip beside `[unr-1 अनुवाद-लंबित]` would be the exact
+                                // false claim §4.5 exists to stop, so the placeholder says so itself.
+                                Text(
+                                    "\u26A0 placeholder",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFB45309),
+                                    ),
+                                )
+                            }
+                        }
                     }
 
-                    // Use in a Sentence Card
+                    // Where this row came from. Replaces an invented "Use in a Sentence" example whose
+                    // Mundari was written by hand.
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -522,28 +643,91 @@ fun PhrasebookScreenPane(
                             .padding(8.dp),
                     ) {
                         Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("Use in a Sentence", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = Color(0xFF1E293B)))
-                                Text("🔊", fontSize = 11.sp, modifier = Modifier.clickable { speakPhrase(selectedPhrase.exampleHi) })
-                            }
+                            Text(
+                                "Where this comes from",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = Color(0xFF1E293B)),
+                            )
                             Spacer(Modifier.height(2.dp))
-                            Text(selectedPhrase.exampleHi, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color(0xFF334155)))
-                            Text(selectedPhrase.exampleEn, style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.5.sp, color = Color(0xFF64748B)))
-                            Text(selectedPhrase.exampleNative, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium, fontSize = 10.5.sp, color = Color(0xFF166534)))
+                            val row = selectedPhrase
+                            if (row == null) {
+                                Text(
+                                    "Select a phrase.",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp, color = Color(0xFF94A3B8)),
+                                )
+                            } else if (row.isPlaceholder) {
+                                // Both facts, because they disagree and a teacher needs to know it:
+                                // the app assigns this row VERIFIED, and the string itself is a
+                                // placeholder no speaker has written yet.
+                                Text(
+                                    "This is a PLACEHOLDER, not ${selectedLang.englishName}. " +
+                                        "The phrase is seeded so the app can be tested; a named " +
+                                        "speaker has not supplied the translation yet.",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFFB45309),
+                                    ),
+                                )
+                            } else {
+                                Text(
+                                    text = when (row.provenance) {
+                                        Provenance.VERIFIED ->
+                                            "Reviewed for classroom use."
+                                        Provenance.CORPUS ->
+                                            "Quoted from ${row.src ?: "a published corpus"}. " +
+                                                "No speaker has reviewed it for this classroom."
+                                        Provenance.APPROXIMATE ->
+                                            "Close match from the phrasebook — judge before using."
+                                        Provenance.MACHINE ->
+                                            "Machine translation. No human has seen this string."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp, color = Color(0xFF334155)),
+                                )
+                                row.english?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        "Corpus translated: \u201C$it\u201D",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.5.sp, color = Color(0xFF64748B)),
+                                    )
+                                }
+                                row.pos?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        "Part of speech: $it",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.5.sp, color = Color(0xFF64748B)),
+                                    )
+                                }
+                                // Cross-source disagreement, shown rather than resolved. No single
+                                // authoritative Santali lexicon exists, so a majority vote here would
+                                // be inventing a decision the data cannot support.
+                                if (row.variants.isNotEmpty()) {
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        "Other sources say:",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF92400E)),
+                                    )
+                                    row.variants.take(3).forEach { v ->
+                                        val form = v.substringBefore('|')
+                                        val from = v.substringAfter('|', "")
+                                        Text(
+                                            text = OlChikiFont.annotate(
+                                                if (from.isBlank()) form else "$form  ($from)",
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, color = Color(0xFF92400E)),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // Action buttons row: + Add to Class | Copy Text | Share
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        ActionPillButton("＋ Add to Class", Modifier.weight(1.2f))
-                        ActionPillButton("📋 Copy Text", Modifier.weight(1f))
-                        ActionPillButton("🔗 Share", Modifier.weight(0.8f))
+                    speakNote?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 10.5.sp,
+                                color = Color(0xFFB45309),
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
                     }
                 }
             }
@@ -644,15 +828,38 @@ private fun SpeedButton(label: String, isSelected: Boolean, onClick: () -> Unit)
     }
 }
 
+// `ActionPillButton` lived here — "＋ Add to Class", "📋 Copy Text", "🔗 Share". It had no `onClick`
+// parameter at all, so all three were decoration. They are gone rather than wired: "Add to Class" has
+// no class model to add to, and "Share" would be an export path for content the offline invariant and
+// §6.9.4 keep on the device.
+
+/**
+ * Single-letter provenance marker for a dense list row.
+ *
+ * The full [ProvenanceChip] is used in the detail pane where there is room. Here a hue alone would
+ * breach §4.5's rule that colour is never the only signal, so the letter carries it.
+ */
 @Composable
-private fun ActionPillButton(text: String, modifier: Modifier = Modifier) {
+private fun ProvenanceMark(provenance: Provenance) {
+    val (color, letter) = when (provenance) {
+        Provenance.VERIFIED -> BolmitraColors.Verified to "V"
+        Provenance.CORPUS -> BolmitraColors.Corpus to "C"
+        Provenance.APPROXIMATE -> BolmitraColors.Approximate to "A"
+        Provenance.MACHINE -> BolmitraColors.Unavailable to "M"
+    }
     Box(
-        modifier = modifier
-            .background(Color(0xFFF8FAFC), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
-            .padding(vertical = 6.dp),
+        modifier = Modifier
+            .size(16.dp)
+            .background(color.copy(alpha = 0.16f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFF334155))
+        Text(
+            letter,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = color,
+            ),
+        )
     }
 }

@@ -42,13 +42,13 @@ A Hindi-medium teacher cannot say "open your book to page four" in Mundari
 BolMitra
 Offline Android app for Hindi-medium teachers in tribal schools
 
-• Teacher holds a button, speaks Hindi
-• Class hears the mother tongue, live
+• Teacher taps once, speaks Hindi, taps to stop
+• Class hears the mother tongue, sentence by sentence
 • Verified phrasebook first, AI translation on miss
-• Prints NIPUN-aligned bilingual worksheets
+• Every lesson becomes a bilingual worksheet automatically
 • Works with no internet — packs arrive by USB
 
-Ho · Mundari · Santhali — prototype demonstrates Mundari
+Ho · Mundari · Santhali — prototype demonstrates Hindi→Santali end to end
 Bol + Mitra = a friend who speaks the child's language
 ```
 
@@ -57,9 +57,10 @@ Bol + Mitra = a friend who speaks the child's language
 ```
 • Live speech, not a lesson library
 • Verified phrasebook first, neural MT only on miss
+• 5,151-term Santali glossary from CC0/CC-BY corpora, each line citing its source
+• The lesson writes the worksheet — what was said becomes the sheet, timestamped
 • QR carries the worksheet spec — another school regenerates it offline, on paper
-• Deterministic NIPUN worksheets, no LLM, fits 2 GB
-• Degrades honestly: verified / machine / approximate, down to printed paper
+• Degrades honestly: verified / from corpus / approximate / machine, down to printed paper
 ```
 
 Cut from this slide: the impact block (that is slide 5), `AI Lesson Planner`
@@ -75,35 +76,37 @@ Cut from this slide: the impact block (that is slide 5), `AI Lesson Planner`
 ```
 LANGUAGES        Kotlin (Android) · Python (tools)
 UI               Jetpack Compose · Room + SQLite FTS4
-SPEECH RUNTIME   sherpa-onnx — one ONNX Runtime for ASR + TTS + VAD, not four engines
-ASR (HINDI)      IndicConformer int8 · Silero VAD
-TTS (MUNDARI)    MunTTS / VITS — purpose-built, 27.51 h corpus
-TRANSLATION      T0 phrasebook (FTS4) → T1 compact transformer, ~15–30M int8
+SPEECH RUNTIME   sherpa-onnx — one ONNX Runtime for ASR + TTS, not separate engines
+ASR (HINDI)      IndicConformer int8, offline recogniser
+TTS              MMS / VITS — Mundari voice, 27.51 h corpus
+TRANSLATION      T0 phrasebook + glossary → T1 IndicTrans2 distilled 320M int8
+SCRIPT           Ol Chiki → Devanagari from Unicode CLDR, bundled Noto Sans Ol Chiki
 HARDWARE         Android 9+ (API 28), arm64, 2 GB RAM floor
 ```
 
 **KEY HIGHLIGHTS**
 
 ```
-✓ 100% offline after first content sync
-✓ Resident footprint ~470–635 MB
-✓ Voice-to-voice design budget ≤ 3 s — Phase 0 measures it on real hardware
+✓ 100% offline — the app holds no internet permission at all
+✓ Voice-to-voice design budget ≤ 3 s, measured per utterance from end of speech
 ✓ Signed content packs via USB / Wi-Fi Direct
-✓ Only ~30–50 MB of MT on device (a general model at int8 is 472 MB–1.14 GB)
+✓ 5,151 Santali terms ingested from CC0/CC-BY sources, disagreements recorded not resolved
+✓ Recordings stay in app-private storage — no gallery, no upload path
 ```
 
 **SYSTEM ARCHITECTURE** — one top-to-bottom diagram, fork clearly visible
 
 ```
-Teacher speaks Hindi
-  → push-to-talk + VAD
+Teacher taps the mic, speaks Hindi
+  → capture, cut at each pause
   → Hindi ASR
-  → phrasebook T0 lookup
-       hit  → pre-rendered Mundari audio
-       miss → compact MT T1 → Mundari TTS
-  → students hear Mundari + Devanagari text on screen
+  → T0 lookup: verified phrasebook, then cited corpus glossary
+       hit  → speak that row's own text
+       miss → T1 machine translation → voice
+  → class hears it, sees the native script, with a provenance label
+  → the turn is saved: history, recording, and the lesson's worksheet
 
-Hindi → Mundari first. Santhali & Ho ship later as language packs.
+Hindi → Santali works end to end. Mundari & Ho ship as language packs.
 Teacher corrections flow back into verified packs.
 ```
 
@@ -163,13 +166,14 @@ Ho — TTS only, corrections supply data
 **RISKS & MITIGATION** — pair them, do not soften them
 
 ```
-Reviewer capacity is the quality floor  →  200–300 seeded phrases, paid-microtask
-                                            precedent (Karya), corrections grow it
+Reviewer capacity is the quality floor  →  5,151 cited corpus terms carry the load until a
+                                            speaker signs off; every line names its source
 Raw MT quality into these languages is low  →  phrasebook-first, provenance labels
 CC-BY-NC on open TTS  →  school use is non-commercial; own-trained TTS = clean licence
-≤3 s unverified on real hardware  →  Phase 0 measures before feature work
-Thirty children are also "speech" to a VAD  →  push-to-talk is the primary control
-2 GB memory ceiling  →  only T0/T1 on device, large models stay at the prep station
+≤3 s budget  →  measured per utterance from end of speech, not from the tap
+Thirty children are also "speech"  →  the teacher opens and closes the mic; it also closes
+                                        itself after 15 s so a tablet left down goes quiet
+2 GB memory ceiling  →  one shared ASR and one shared voice, not one per language
 ```
 
 Header line for this slide: `Top risk is native-speaker review capacity — a people
@@ -236,12 +240,24 @@ DIKSHA Energized Textbooks — QR-in-textbook precedent, 35 states/UTs
 **Comparison table** — only axes no other slide claims
 
 ```
-Devanagari + native script in one pass
-Provenance on every output (verified / machine / approximate)
+Ol Chiki on screen + Devanagari to the voice, in one pass
+Provenance on every output, and a citation on every corpus line
 QR spec — regenerate a sheet on a device that never had the file
 Runs on a 2 GB tablet, no cloud inference
 Corrections become training data
 ```
+
+---
+
+## Do not claim on any slide
+
+`OCR` in any form. Measured against two published Santali models on 76 annotated handwriting
+images: best character error rate **0.439**, worst **1.175**. The errors land on vowels, so they
+change words rather than blurring them. Re-checkable with `tools/ocr-spike.py`. It is future scope,
+not a feature.
+
+Any accuracy figure for Hindi→Santali translation. The internal round-trip proxy is a development
+gate, not a metric — it shares the model's own biases and says nothing about fluency.
 
 Fix the two typos: `An fully offline` → `A fully offline`,
 and `RESEARCH  AND` has a double space.

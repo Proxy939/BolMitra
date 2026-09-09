@@ -30,14 +30,17 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,15 +54,22 @@ import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import org.bolmitra.curriculum.AssemblyResult
 import org.bolmitra.curriculum.GeneratedItem
+import org.bolmitra.curriculum.LessonWorksheet
 import org.bolmitra.curriculum.NumeracySeed
 import org.bolmitra.curriculum.QrCode
 import org.bolmitra.curriculum.WorksheetAssembler
+import org.bolmitra.data.TurnRecorder
+import org.bolmitra.phrasebook.Provenance
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.ui.common.AppNotice
 import org.bolmitra.ui.common.NoticeKind
 import org.bolmitra.ui.common.NotificationHost
+import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.common.WorksheetPreviewSheet
 import org.bolmitra.ui.common.WorksheetThumbnail
 import org.bolmitra.ui.common.rememberNotifier
@@ -85,6 +95,7 @@ fun WorksheetsScreenPane(
     var selectedWorksheetIndex by remember { mutableStateOf(0) }
     var currentPage by remember { mutableStateOf(1) }
 
+    val context = LocalContext.current
     val notifier = rememberNotifier()
     val scope = rememberCoroutineScope()
 
@@ -98,21 +109,56 @@ fun WorksheetsScreenPane(
         "My Body", "Fruits & Vegetables", "Classroom Objects", "Stories", "Activities",
     )
 
-    val worksheets = remember {
+    /**
+     * The lesson recap, built from the turns that actually happened.
+     *
+     * Rebuilt whenever the language changes or the screen is re-entered, so walking here straight from
+     * a Live Class session shows that session. `recapReloads` lets the Regenerate button re-stamp it.
+     */
+    val recorder = remember { TurnRecorder(context) }
+    var recap by remember { mutableStateOf<LessonWorksheet.Sheet?>(null) }
+    var recapReloads by remember { mutableStateOf(0) }
+
+    LaunchedEffect(selectedLang, recapReloads) {
+        val turns = recorder.forWorksheet(selectedLang)
+        recap = LessonWorksheet.from(
+            turns = turns,
+            languageName = selectedLang.englishName,
+            nowMs = System.currentTimeMillis(),
+        )
+    }
+
+    // The first card is real: it reports the row count the recap actually holds. The rest are authored
+    // categories whose subtitle now follows the selected language instead of always claiming Mundari.
+    val worksheets = remember(selectedLang, recap) {
+        val pair = "Hindi \u2194 ${selectedLang.englishName}"
+        val recapRows = recap?.rows?.size ?: 0
         listOf(
-            WorksheetItem("Alphabet (वर्णमाला)", "Hindi ↔ Mundari", "Class 1 • 4 pages", 0),
-            WorksheetItem("Numbers (1 – 10)", "Hindi ↔ Mundari", "Class 1 • 3 pages", 1),
-            WorksheetItem("Animals (जानवर)", "Hindi ↔ Mundari", "Class 1 • 4 pages", 2),
-            WorksheetItem("Colors (रंग)", "Hindi ↔ Mundari", "Class 1 • 2 pages", 3),
-            WorksheetItem("Fruits (फल)", "Hindi ↔ Mundari", "Class 1 • 3 pages", 4),
-            WorksheetItem("My Body (शरीर के अंग)", "Hindi ↔ Mundari", "Class 1 • 4 pages", 5),
-            WorksheetItem("Classroom Objects", "Hindi ↔ Mundari", "Class 1 • 3 pages", 6),
-            WorksheetItem("Tracing Practice", "Hindi ↔ Mundari", "Class 1 • 5 pages", 7),
-            WorksheetItem("Short Stories (छोटी कहानियाँ)", "Hindi ↔ Mundari", "Class 1 • 4 pages", 8),
+            WorksheetItem(
+                title = "Lesson recap (from history)",
+                subtitle = pair,
+                gradePages = if (recapRows == 0) {
+                    "No lessons recorded yet"
+                } else {
+                    "$recapRows ${if (recapRows == 1) "phrase" else "phrases"} from your class"
+                },
+                categoryIndex = 0,
+            ),
+            WorksheetItem("Alphabet (वर्णमाला)", pair, "Class 1 • Alphabet", 0),
+            WorksheetItem("Numbers (1 – 10)", pair, "Class 1 • Numeracy", 1),
+            WorksheetItem("Animals (जानवर)", pair, "Class 1 • Vocabulary", 2),
+            WorksheetItem("Colors (रंग)", pair, "Class 1 • Vocabulary", 3),
+            WorksheetItem("Fruits (फल)", pair, "Class 1 • Vocabulary", 4),
+            WorksheetItem("My Body (शरीर के अंग)", pair, "Class 1 • Vocabulary", 5),
+            WorksheetItem("Classroom Objects", pair, "Class 1 • Vocabulary", 6),
+            WorksheetItem("Tracing Practice", pair, "Class 1 • Writing", 7),
         )
     }
 
     val worksheetTitle = worksheets.getOrNull(selectedWorksheetIndex)?.title ?: "Worksheet"
+
+    /** The recap is card 0. Only it has real content to preview. */
+    val showingRecap = selectedWorksheetIndex == 0
 
     /**
      * Generates a bilingual worksheet, then announces the real outcome.
@@ -360,16 +406,51 @@ fun WorksheetsScreenPane(
 
                     Spacer(Modifier.height(6.dp))
 
-                    // Embedded worksheet canvas preview
-                    WorksheetPreviewSheet(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
+                    // The recap renders its real rows; every other card still shows the illustrative
+                    // canvas, because no content has been authored for those yet and drawing rows
+                    // there would imply otherwise.
+                    val sheet = recap
+                    if (showingRecap && sheet != null && !sheet.isEmpty) {
+                        LessonRecapPreview(
+                            sheet = sheet,
+                            page = currentPage,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        )
+                    } else if (showingRecap) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "Teach a Live Class first.\nWhat you say there becomes this sheet.",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF94A3B8),
+                                ),
+                            )
+                        }
+                    } else {
+                        WorksheetPreviewSheet(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                        )
+                    }
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Pagination controls: < 1 / 4 >
+                    // Pagination derived from the content. The "/ 4" here was a literal, so it
+                    // claimed four pages for every sheet including empty ones.
+                    val pageCount = if (showingRecap && sheet != null) {
+                        maxOf(1, (sheet.rows.size + RECAP_ROWS_PER_PAGE - 1) / RECAP_ROWS_PER_PAGE)
+                    } else {
+                        1
+                    }
+                    if (currentPage > pageCount) currentPage = pageCount
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center,
@@ -377,7 +458,7 @@ fun WorksheetsScreenPane(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = null,
+                            contentDescription = "Previous page",
                             modifier = Modifier
                                 .size(20.dp)
                                 .clickable { if (currentPage > 1) currentPage-- },
@@ -385,7 +466,7 @@ fun WorksheetsScreenPane(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            "$currentPage / 4",
+                            "$currentPage / $pageCount",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -395,14 +476,12 @@ fun WorksheetsScreenPane(
                         Spacer(Modifier.width(10.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
+                            contentDescription = "Next page",
                             modifier = Modifier
                                 .size(20.dp)
-                                .clickable { if (currentPage < 4) currentPage++ },
+                                .clickable { if (currentPage < pageCount) currentPage++ },
                             tint = Color(0xFF64748B),
                         )
-                        Spacer(Modifier.width(16.dp))
-                        Text("⛶", fontSize = 13.sp, color = Color(0xFF64748B))
                     }
 
                     Spacer(Modifier.height(8.dp))
@@ -609,6 +688,126 @@ private fun WorksheetCard(
                     Text("↓", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
             }
+        }
+    }
+}
+
+/** Rows that fit on one previewed page. Also what the pagination arithmetic divides by. */
+private const val RECAP_ROWS_PER_PAGE = 6
+
+/**
+ * Renders the lesson recap: real bilingual rows, when it was generated, and how much of it no human
+ * has checked.
+ *
+ * The generation stamp and the covered window are both shown because they answer different questions.
+ * "Generated 2:14 PM" says how fresh the sheet is; "covers 1:52 PM – 2:09 PM" says which lesson it
+ * came from. A teacher printing a sheet an hour later needs the second one.
+ *
+ * Ol Chiki goes through [OlChikiFont.annotate] rather than being set as the whole-Text family: the
+ * bundled face carries 53 codepoints and no Devanagari, so a Mundari recap would tofu entirely.
+ */
+@Composable
+private fun LessonRecapPreview(
+    sheet: LessonWorksheet.Sheet,
+    page: Int,
+    modifier: Modifier = Modifier,
+) {
+    val from = (page - 1) * RECAP_ROWS_PER_PAGE
+    val rows = sheet.rows.drop(from).take(RECAP_ROWS_PER_PAGE)
+    val clock = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val stamp = remember { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()) }
+
+    Column(
+        modifier = modifier
+            .background(Color.White, RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+            .padding(10.dp),
+    ) {
+        Text(
+            "${sheet.title} · Hindi \u2194 ${sheet.languageName}",
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.5.sp,
+                color = Color(0xFF14532D),
+            ),
+        )
+        // The date and time the user asked to see on the sheet.
+        Text(
+            "Generated ${stamp.format(Date(sheet.generatedAtMs))}",
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp, color = Color(0xFF64748B)),
+        )
+        if (sheet.coversFromMs != null && sheet.coversToMs != null) {
+            Text(
+                "Covers ${clock.format(Date(sheet.coversFromMs))} – " +
+                    clock.format(Date(sheet.coversToMs)),
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp, color = Color(0xFF94A3B8)),
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+        HorizontalDivider(color = Color(0xFFF1F5F9))
+        Spacer(Modifier.height(4.dp))
+
+        rows.forEachIndexed { i, row ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    "${from + i + 1}.",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8),
+                    ),
+                    modifier = Modifier.width(18.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        row.hindi,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF1E293B),
+                        ),
+                    )
+                    Text(
+                        text = OlChikiFont.annotate(row.target),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF166534),
+                        ),
+                    )
+                }
+                // Per-row level, so a machine guess is never indistinguishable from a reviewed phrase
+                // on a printed page.
+                Text(
+                    when (row.provenance) {
+                        Provenance.VERIFIED -> "verified"
+                        Provenance.CORPUS -> row.src ?: "corpus"
+                        Provenance.APPROXIMATE -> "approx"
+                        Provenance.MACHINE -> "machine"
+                    },
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 8.5.sp,
+                        color = if (row.isMachine) Color(0xFFB45309) else Color(0xFF94A3B8),
+                    ),
+                )
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        if (sheet.needsReviewCount > 0) {
+            // §4.5 does not stop applying because the medium is a page rather than a voice.
+            Text(
+                "\u26A0 ${sheet.needsReviewCount} of ${sheet.rows.size} lines are machine " +
+                    "translations. No speaker has checked them.",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFB45309),
+                ),
+            )
         }
     }
 }

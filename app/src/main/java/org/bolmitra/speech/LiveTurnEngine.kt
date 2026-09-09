@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.phrasebook.SantaliGlossary
+import org.bolmitra.translate.AudioClip
 import org.bolmitra.translate.AudioPlayer
 import org.bolmitra.translate.IndicTrans2MtEngine
 import org.bolmitra.translate.PhrasebookEngine
@@ -285,6 +286,29 @@ class LiveTurnEngine private constructor(
     )
 
     val audioPlayer: AudioPlayer? get() = player
+
+    /**
+     * Speaks arbitrary Devanagari through the loaded voice, for the Phrasebook screen's play button.
+     *
+     * **Devanagari in, by construction.** The voice is trained on Odia orthography and
+     * `SherpaMundariTts` runs `DevanagariToOdia` itself (V63), so passing `targetTextNative` here
+     * would hand it Ol Chiki for Santali and produce silence. Callers must pass `targetTextDeva`.
+     *
+     * This adds no translation: it renders a string that already exists in a row. It is the same thing
+     * `TurnOrchestrator` does for a T0 hit whose pack audio is missing — the words are the row's own,
+     * only the voice is synthetic, and the voice is synthetic on every rung anyway.
+     */
+    fun synthesize(devanagari: String): AudioClip? =
+        devanagari.takeIf { it.isNotBlank() }?.let { tts?.synthesizeUtterance(it) }
+
+    /**
+     * The voice's output sample rate, or null before the model is loaded.
+     *
+     * Read-only, and needed outside this class because a synthesised clip is a bare `ShortArray` with
+     * no rate attached. Saving one as a WAV without this writes a file that plays back at the wrong
+     * speed — the microphone is 16 kHz, the VITS voice is not.
+     */
+    val ttsSampleRate: Int? get() = tts?.sampleRate
 
     companion object {
         /**
