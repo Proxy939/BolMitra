@@ -1,6 +1,7 @@
 package org.bolmitra.curriculum
 
 import kotlin.random.Random
+import org.bolmitra.phrasebook.Provenance
 
 /**
  * Template-based item generation — ARCHITECTURE.md §6.16.
@@ -83,6 +84,21 @@ enum class SolutionStrategy {
     ADDITION_NO_CARRY,
     ADDITION_WITH_CARRY,
     SUBTRACTION_NO_BORROW,
+
+    /**
+     * Class 2's framing, not a shortcut for "times".
+     *
+     * `C2-NUM-4` asks for multiplication *as repeated addition*, so the prompt shows the addition
+     * it stands for. Tagging it separately from [ADDITION_NO_CARRY] also keeps interleaving honest:
+     * the two are solved differently even though one is defined via the other.
+     */
+    MULTIPLICATION_AS_REPEATED_ADDITION,
+
+    /** `C2-NUM-4`'s other half: division presented as sharing equally, never as long division. */
+    DIVISION_AS_SHARING,
+
+    /** `C1-NUM-2` and `C2-NUM-2`: continue a sequence of numbers or shapes. */
+    PATTERN_EXTENSION,
 }
 
 /**
@@ -102,6 +118,27 @@ data class ItemModel(
     val slots: List<Slot>,
     /** Answer template for the teacher's key. Null for open-ended items like tracing. */
     val answerTemplate: String? = null,
+    /**
+     * Name of the slot whose bound value names a picture, or null for a text-only item.
+     *
+     * The slot's value is an English `PictureBank` key rather than a Hindi word, because that is
+     * also the glossary's join column — one binding then yields the drawing, the Hindi and the
+     * corpus target form. Appended last and defaulted so no existing model changes.
+     */
+    val pictureSlot: String? = null,
+    /**
+     * Placeholders this model leaves for a later pass to fill, rather than binding from a slot.
+     *
+     * `{hi}`, `{target}` and `{akshara}` are all derived from the one bound picture key, and
+     * `{sequence}`, `{repeated}` and `{total}` are computed from radical values — see
+     * `TopicWorksheets.resolve`. Binding them as their own slots is what would let them drift out
+     * of step with the picture, which is the failure this design exists to prevent.
+     *
+     * Declaring them here is not paperwork: it is what keeps [validate] able to tell a deliberate
+     * deferral from a typo. Without it `{hi}` and `{hnid}` look identical to the checker, and the
+     * typo reaches a child's sheet as literal `{hnid}` text.
+     */
+    val derivedPlaceholders: Set<String> = emptySet(),
 ) {
     /**
      * Structural checks that can be automated.
@@ -120,16 +157,42 @@ data class ItemModel(
         slots.filter { it.values.isEmpty() }.forEach {
             problems += "slot '${it.name}' in $modelId has no values"
         }
-        for (t in listOfNotNull(hiTemplate, targetTemplate, answerTemplate)) {
+        val templates = listOfNotNull(hiTemplate, targetTemplate, answerTemplate)
+        for (t in templates) {
             referencedSlots(t).forEach { ref ->
-                if (ref !in declared) problems += "$modelId references undeclared slot '$ref'"
+                if (ref !in declared && ref !in derivedPlaceholders) {
+                    problems += "$modelId references undeclared slot '$ref'"
+                }
             }
         }
-        // A slot declared but never used is dead weight that still consumes seed entropy,
-        // which quietly changes every previously issued variant. See generate().
+        // A derived placeholder nobody references is a stale declaration, and it would silence the
+        // typo check for a name the model no longer uses.
+        derivedPlaceholders.forEach { name ->
+            if (templates.none { name in referencedSlots(it) }) {
+                problems += "$modelId declares derived placeholder '$name' but never uses it"
+            }
+            if (name in declared) {
+                problems += "$modelId has '$name' as both a slot and a derived placeholder"
+            }
+        }
+        // A slot declared but never used is dead weight that still consumes seed entropy, which
+        // quietly changes every previously issued variant. See generate().
+        //
+        // The hazard is specific to incidental slots, and narrowing it to those is what makes the
+        // check correct rather than merely strict. Only `Slot.Incidental` draws from the Random in
+        // generate(); a radical slot takes its value from `radicalChoices` or falls back to
+        // `values.first()`, consuming no entropy at all. So an unreferenced radical slot cannot
+        // shift any other slot's draw, and several legitimately exist: `pattern` and `share` are
+        // pinned by difficulty and then *derived* into the printed text by `TopicWorksheets`,
+        // which is a use, just not a template reference.
+        //
+        // [pictureSlot] counts as a use for the same reason: the generator copies its binding onto
+        // the item, so the value reaches the sheet as a drawing instead of as words.
         declared.forEach { name ->
+            val isIncidental = slots.firstOrNull { it.name == name } is Slot.Incidental
+            if (!isIncidental) return@forEach
             val used = listOfNotNull(hiTemplate, targetTemplate, answerTemplate)
-                .any { name in referencedSlots(it) }
+                .any { name in referencedSlots(it) } || name == pictureSlot
             if (!used) problems += "$modelId declares unused slot '$name'"
         }
         return problems
@@ -148,6 +211,34 @@ data class GeneratedItem(
     val hiText: String,
     val targetText: String,
     val answer: String?,
+    /**
+     * English `PictureBank` key for the illustration, or null for a text-only item.
+     *
+     * Resolved from [ItemModel.pictureSlot] at generation time, so it is part of what
+     * `(modelId, seed)` reproduces and a reprint shows the same picture.
+     */
+    val pictureTerm: String? = null,
+    /**
+     * Provenance of [targetText]. Null when the item carries no target-language words at all —
+     * an arithmetic item is the same in every language, so there is nothing to vouch for.
+     *
+     * **Not optional when there are words.** The invariant is explicit that provenance is stored
+     * on a worksheet line as well as a history row: the rule does not stop applying because the
+     * medium changed from a voice to a page. `TopicWorksheets` sets it from the glossary row it
+     * read, never by inference at display time.
+     */
+    val targetProvenance: Provenance? = null,
+    /** Corpus that [targetText] came from, carried alongside [targetProvenance] as `CORPUS` demands. */
+    val targetSrc: String? = null,
+    /**
+     * The slot values this item was generated from.
+     *
+     * Kept because the alternative is worse: an answer key for `{a} + {b} = ___` otherwise has to
+     * be recovered by parsing the rendered prompt back into numbers, and a generator that reads its
+     * own output is one formatting change away from printing wrong answers. With the bindings in
+     * hand `TopicWorksheets` computes the sum directly from `a` and `b`.
+     */
+    val bindings: Map<String, String> = emptyMap(),
 )
 
 object ItemGenerator {
@@ -200,6 +291,10 @@ object ItemGenerator {
             hiText = fill(model.hiTemplate, bindings),
             targetText = fill(model.targetTemplate, bindings),
             answer = model.answerTemplate?.let { fill(it, bindings) },
+            // Read from the same bindings the templates were filled from, so the picture cannot
+            // disagree with the words next to it.
+            pictureTerm = model.pictureSlot?.let { bindings[it] },
+            bindings = bindings,
         )
     }
 

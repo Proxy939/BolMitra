@@ -57,16 +57,30 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import org.bolmitra.curriculum.AssemblyResult
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import org.bolmitra.curriculum.FlashcardDeck
+import org.bolmitra.curriculum.Flashcards
 import org.bolmitra.curriculum.GeneratedItem
+import org.bolmitra.curriculum.GradeBand
 import org.bolmitra.curriculum.LessonWorksheet
-import org.bolmitra.curriculum.NumeracySeed
+import org.bolmitra.curriculum.PictureBank
 import org.bolmitra.curriculum.QrCode
-import org.bolmitra.curriculum.WorksheetAssembler
+import org.bolmitra.curriculum.Sheet
+import org.bolmitra.curriculum.SheetResult
+import org.bolmitra.curriculum.TargetWord
+import org.bolmitra.curriculum.TopicDetector
+import org.bolmitra.curriculum.TopicMatch
+import org.bolmitra.curriculum.TopicWorksheets
+import org.bolmitra.curriculum.WorksheetShare
+import org.bolmitra.curriculum.WorksheetTopic
 import org.bolmitra.data.TurnRecorder
 import org.bolmitra.phrasebook.Provenance
+import org.bolmitra.phrasebook.SantaliGlossary
 import org.bolmitra.speech.TargetLanguage
 import org.bolmitra.ui.common.AppNotice
+import org.bolmitra.ui.common.FlashcardGrid
+import org.bolmitra.ui.common.GeneratedSheetView
 import org.bolmitra.ui.common.NoticeKind
 import org.bolmitra.ui.common.NotificationHost
 import org.bolmitra.ui.common.OlChikiFont
@@ -119,6 +133,56 @@ fun WorksheetsScreenPane(
     var recap by remember { mutableStateOf<LessonWorksheet.Sheet?>(null) }
     var recapReloads by remember { mutableStateOf(0) }
 
+    // --- Auto-generated topic sheets and flashcards -------------------------------------------
+    /**
+     * The generated sheet, the deck beside it, and the topic they were built for.
+     *
+     * [detected] is a *suggestion* from what the teacher said in the last lesson, and [topic] is
+     * what will actually be generated. They are separate values because the teacher must be able to
+     * override a guess: `TopicDetector` matches words, not meaning, and a wrong guess should cost a
+     * tap rather than produce a worksheet the lesson never asked for.
+     */
+    var topicSheet by remember { mutableStateOf<Sheet?>(null) }
+    var deck by remember { mutableStateOf<FlashcardDeck?>(null) }
+    var topic by remember { mutableStateOf(WorksheetTopic.NUMBERS) }
+    var detected by remember { mutableStateOf<TopicMatch?>(null) }
+    var band by remember { mutableStateOf(GradeBand.GRADE_1) }
+    var showAnswers by remember { mutableStateOf(false) }
+    var showCards by remember { mutableStateOf(false) }
+
+    /**
+     * Target-language words for the worksheets, read from the shipped glossary.
+     *
+     * Loaded once per language on IO. An empty map is a supported state, not a failure: the glossary
+     * returns nothing on any read problem by design, and a sheet must still come out in Hindi rather
+     * than not at all.
+     */
+    var vocabulary by remember { mutableStateOf<Map<String, TargetWord>>(emptyMap()) }
+    LaunchedEffect(selectedLang) {
+        vocabulary = withContext(Dispatchers.IO) {
+            // Santali only, and the gate is not optional. The asset is Ol Chiki throughout, so
+            // serving it for Mundari or Ho would print Santali words on a sheet labelled another
+            // language — the same wrong-language bug `SantaliGlossary.phrasesFor` guards against on
+            // the live path. A Mundari sheet comes out Hindi-only, and says so, until a Mundari
+            // corpus exists.
+            if (selectedLang != TargetLanguage.SANTALI) return@withContext emptyMap()
+            SantaliGlossary.load(context)
+                .filter { it.santali.isNotBlank() }
+                // The picture bank's English keys are the join column. Only terms we can draw are
+                // useful here, so the map stays small rather than holding all 5,151 rows.
+                .filter { PictureBank.byEnglish(it.english) != null }
+                .associate { term ->
+                    term.english.lowercase() to TargetWord(
+                        english = term.english,
+                        native = term.santali,
+                        // CORPUS is what the glossary hands over, and it is never promoted here.
+                        provenance = Provenance.CORPUS,
+                        src = term.src,
+                    )
+                }
+        }
+    }
+
     LaunchedEffect(selectedLang, recapReloads) {
         val turns = recorder.forWorksheet(selectedLang)
         recap = LessonWorksheet.from(
@@ -126,6 +190,15 @@ fun WorksheetsScreenPane(
             languageName = selectedLang.englishName,
             nowMs = System.currentTimeMillis(),
         )
+
+        // What the teacher actually said becomes the topic suggestion. The whole lesson is joined
+        // rather than only the last utterance, because a topic is what a lesson was about and one
+        // sentence is a poor sample of that.
+        val match = TopicDetector.detect(turns.joinToString(" ") { it.hiText })
+        detected = match
+        // Only moves the selection on a real match. A null must not silently reset the teacher's
+        // choice to a default, which would be the screen deciding for her.
+        if (match != null) topic = match.topic
     }
 
     // The first card is real: it reports the row count the recap actually holds. The rest are authored
@@ -173,48 +246,61 @@ fun WorksheetsScreenPane(
         busy = true
         scope.launch {
             try {
+                // Seeded from the clock so repeated taps give a fresh sheet, while any one sheet
+                // stays reprintable and shareable from its seed alone.
+                val seed = System.currentTimeMillis()
+                val pictures = detected?.pictureCategory
+                    // The lesson named something, so illustrate with that rather than the topic's
+                    // default: "पाँच आम गिनो" should count mangoes.
+                    ?.let { PictureBank.forCategory(it) }
+                    ?.takeIf { it.size >= PictureBank.MIN_PICTURES_PER_SHEET }
+                    ?: TopicWorksheets.defaultPictures(topic)
+
                 val result = withContext(Dispatchers.Default) {
-                    WorksheetAssembler.assemble(
-                        // Seeded from the clock so repeated taps give a fresh sheet, and the seed
-                        // is what makes any one sheet reprintable.
-                        spec = NumeracySeed.spec(seed = System.currentTimeMillis()),
-                        models = NumeracySeed.models,
+                    TopicWorksheets.build(
+                        topic = topic,
+                        band = band,
+                        seed = seed,
+                        vocabulary = vocabulary,
+                        packVersion = SantaliGlossary.PACK_VERSION,
+                        pictures = pictures,
                     )
                 }
                 when (result) {
-                    is AssemblyResult.Success -> {
-                        generated = result.items
+                    is SheetResult.Ready -> {
+                        topicSheet = result.sheet
+                        generated = result.sheet.items
+                        deck = withContext(Dispatchers.Default) {
+                            Flashcards.deckFor(
+                                topic = topic,
+                                vocabulary = vocabulary,
+                                packVersion = SantaliGlossary.PACK_VERSION,
+                            )
+                        }
                         // A new sheet invalidates the QR built from the old one.
                         qrBitmap = null
-                        val relaxed = result.relaxations
+                        val s = result.sheet
                         notifier.show(
                             AppNotice(
                                 title = "Worksheet ready",
-                                message = if (relaxed.isEmpty()) {
-                                    "${result.items.size} bilingual items generated for " +
-                                        "Hindi ↔ ${selectedLang.englishName}."
-                                } else {
-                                    "${result.items.size} items generated, with " +
-                                        "${relaxed.size} constraint relaxed: " +
-                                        relaxed.first().constraint
-                                },
-                                messageHi = "वर्कशीट तैयार है — ${result.items.size} प्रश्न",
-                                kind = if (relaxed.isEmpty()) NoticeKind.SUCCESS else NoticeKind.WARNING,
+                                // Counts come from the sheet itself. Claiming "bilingual" for a
+                                // sheet whose target words were missing is the exact fabrication
+                                // the provenance system exists to prevent.
+                                message = "${s.items.size} solvable items for ${topic.englishLabel} " +
+                                    "at ${band.label}. ${s.bilingualItemCount} of them carry a " +
+                                    "${selectedLang.englishName} word from the corpus." +
+                                    if (s.relaxations.isEmpty()) "" else " See the notes on the sheet.",
+                                messageHi = "वर्कशीट तैयार — ${s.items.size} प्रश्न",
+                                kind = if (s.relaxations.isEmpty()) NoticeKind.SUCCESS else NoticeKind.WARNING,
                             ),
                         )
                     }
-                    is AssemblyResult.DeficientPool -> notifier.show(
+                    is SheetResult.NotEnoughContent -> notifier.show(
                         AppNotice(
                             title = "Could not fill the sheet",
-                            message = "Only ${result.availableAfterFiltering} of " +
-                                "${result.required} items were available. More items need authoring.",
-                            kind = NoticeKind.WARNING,
-                        ),
-                    )
-                    is AssemblyResult.NoItemModels -> notifier.show(
-                        AppNotice(
-                            title = "Nothing to generate yet",
-                            message = "No item models exist for ${result.lakshyaCode}.",
+                            // The diagnosis distinguishes a deficient pool from a bad spec, which
+                            // need opposite responses. Reporting "infeasible" alone would not.
+                            message = result.diagnosis,
                             kind = NoticeKind.WARNING,
                         ),
                     )
@@ -241,7 +327,14 @@ fun WorksheetsScreenPane(
         busy = true
         scope.launch {
             try {
-                val payload = QrCode.payloadFor(worksheetTitle, generated)
+                // A topic sheet shares as a spec so another tablet regenerates it exactly; a recap
+                // has no seed to regenerate from, so it shares as plain text.
+                val sheetToShare = topicSheet
+                val payload = if (sheetToShare != null) {
+                    WorksheetShare.payloadFor(sheetToShare, QrCode.MAX_PAYLOAD_CHARS)
+                } else {
+                    QrCode.payloadFor(worksheetTitle, generated)
+                }
                 // Encoding allocates a bitmap and runs Reed-Solomon; off the main thread.
                 val bmp = withContext(Dispatchers.Default) { QrCode.encode(payload) }
                 qrBitmap = bmp
@@ -249,9 +342,15 @@ fun WorksheetsScreenPane(
                     if (bmp != null) {
                         AppNotice(
                             title = "QR code generated",
-                            message = "Scan it with any camera to read the worksheet. " +
-                                "Nothing is uploaded — the sheet itself is in the code.",
-                            messageHi = "क्यूआर कोड तैयार है",
+                            message = if (sheetToShare != null) {
+                                "Any camera shows the questions. Another BolMitra tablet scanning " +
+                                    "it rebuilds the whole sheet — pictures, words and answer key — " +
+                                    "with no internet. Nothing is uploaded."
+                            } else {
+                                "Scan it with any camera to read the worksheet. " +
+                                    "Nothing is uploaded — the sheet itself is in the code."
+                            },
+                            messageHi = "क्यूआर कोड तैयार है — बिना इंटरनेट साझा करें",
                         )
                     } else {
                         AppNotice(
@@ -350,22 +449,93 @@ fun WorksheetsScreenPane(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // Left: Grid of Worksheets (weight 1.9f)
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .weight(1.9f)
-                    .height(440.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                itemsIndexed(worksheets) { index, item ->
-                    val isSelected = selectedWorksheetIndex == index
-                    WorksheetCard(
-                        item = item,
-                        isSelected = isSelected,
-                        onClick = { selectedWorksheetIndex = index },
-                    )
+            // Left: the generated sheet once one exists, otherwise the category grid.
+            //
+            // The sheet takes this side rather than the preview rail deliberately. The rail is a
+            // fixed 440 dp column shared with every control, so a worksheet placed there was
+            // squeezed to nothing the moment the topic chips were added; and a sheet carrying
+            // counting strips of up to twenty pictures needs width more than the card grid does.
+            val generatedSheet = topicSheet
+            if (generatedSheet != null) {
+                Column(
+                    modifier = Modifier
+                        .weight(1.9f)
+                        .height(440.dp)
+                        .background(Color.White, RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                        .padding(14.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    // The QR sits above the sheet so a teacher can hold the tablet up to a row of
+                    // phones without a modal in the way, and at a size that scans from a distance.
+                    qrBitmap?.let { bmp ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription =
+                                    "QR code containing the ${generatedSheet.titleHindi} worksheet",
+                                modifier = Modifier
+                                    .size(150.dp)
+                                    .background(Color.White, RoundedCornerShape(8.dp))
+                                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                                    .padding(6.dp),
+                            )
+                            Column {
+                                Text(
+                                    "कैमरे से स्कैन करें · Scan to share",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A),
+                                    ),
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    // Says what it actually does, both halves of it. The claim is
+                                    // checkable: the app holds no INTERNET permission at all.
+                                    "किसी भी कैमरे से प्रश्न पढ़े जा सकते हैं। दूसरे BolMitra टैबलेट " +
+                                        "पर स्कैन करने से पूरा पत्रक — चित्र, शब्द और उत्तर — " +
+                                        "बिना इंटरनेट फिर से बन जाता है।",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF475569),
+                                    ),
+                                )
+                            }
+                        }
+                    }
+
+                    if (showCards) {
+                        deck?.let { FlashcardGrid(it, Modifier.fillMaxWidth(), columns = 5) }
+                    } else {
+                        GeneratedSheetView(
+                            sheet = generatedSheet,
+                            modifier = Modifier.fillMaxWidth(),
+                            showAnswers = showAnswers,
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .weight(1.9f)
+                        .height(440.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    itemsIndexed(worksheets) { index, item ->
+                        val isSelected = selectedWorksheetIndex == index
+                        WorksheetCard(
+                            item = item,
+                            isSelected = isSelected,
+                            onClick = { selectedWorksheetIndex = index },
+                        )
+                    }
                 }
             }
 
@@ -486,7 +656,115 @@ fun WorksheetsScreenPane(
 
                     Spacer(Modifier.height(8.dp))
 
-                    // Generate button. Runs the real assembler; the popup reports what came back.
+                    // --- Topic and grade -------------------------------------------------------
+                    // The suggestion is shown with the words that produced it, so a teacher can see
+                    // why the app guessed and correct it. A guess presented without its reason is
+                    // indistinguishable from the screen making something up.
+                    detected?.let { match ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("💡", fontSize = 12.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "पाठ से पहचाना: ${match.topic.hindiLabel}" +
+                                    if (match.evidence.isEmpty()) {
+                                        ""
+                                    } else {
+                                        "  (${match.evidence.take(3).joinToString(", ")})"
+                                    },
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.5.sp,
+                                    color = Color(0xFF1E40AF),
+                                ),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+
+                    Text(
+                        "विषय / Topic",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF64748B),
+                        ),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    // Chips wrapped by hand into rows of three: FlowRow is still an experimental
+                    // API, and a fixed chunk is predictable at every window size this app runs at.
+                    WorksheetTopic.entries.toList().chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            row.forEach { candidate ->
+                                val selected = candidate == topic
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(
+                                            if (selected) Color(0xFF2EAF3B) else Color(0xFFF1F5F9),
+                                            RoundedCornerShape(6.dp),
+                                        )
+                                        .clickable(enabled = !busy) { topic = candidate }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = candidate.hindiLabel,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.5.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selected) Color.White else Color(0xFF475569),
+                                        ),
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        // Grade changes the arithmetic ceiling, so it is a curriculum control and
+                        // not a display preference: Class 1 stops at 9, Class 2 goes to 99.
+                        listOf(GradeBand.GRADE_1, GradeBand.GRADE_2).forEach { candidate ->
+                            val selected = candidate == band
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        if (selected) Color(0xFF0EA5E9) else Color(0xFFF1F5F9),
+                                        RoundedCornerShape(6.dp),
+                                    )
+                                    .clickable(enabled = !busy) { band = candidate }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = candidate.label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) Color.White else Color(0xFF475569),
+                                    ),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Generate button. Runs the real generator; the popup reports what came back.
                     Button(
                         onClick = { generateWorksheet() },
                         enabled = !busy,
@@ -500,6 +778,47 @@ fun WorksheetsScreenPane(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                         )
+                    }
+
+                    // Sheet / cards / answers. Only offered once something exists to show, so a
+                    // toggle can never be tapped into an empty pane.
+                    if (topicSheet != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            listOf(
+                                Triple("📄 पत्रक", !showCards) { showCards = false },
+                                Triple("🃏 कार्ड", showCards) { showCards = true },
+                                Triple(
+                                    if (showAnswers) "🔑 उत्तर छिपाओ" else "🔑 उत्तर",
+                                    showAnswers,
+                                ) { showAnswers = !showAnswers },
+                            ).forEach { (label, active, onTap) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(
+                                            if (active) Color(0xFF334155) else Color(0xFFF1F5F9),
+                                            RoundedCornerShape(6.dp),
+                                        )
+                                        .clickable { onTap() }
+                                        .padding(vertical = 7.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.5.sp,
+                                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (active) Color.White else Color(0xFF475569),
+                                        ),
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     if (generated.isNotEmpty()) {
@@ -564,34 +883,10 @@ fun WorksheetsScreenPane(
                         }
                     }
 
-                    // The QR itself, once made. Shown here rather than in a dialog so the teacher
-                    // can hold the tablet up to a row of phones without a modal in the way.
-                    qrBitmap?.let { bmp ->
-                        Spacer(Modifier.height(8.dp))
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Image(
-                                bitmap = bmp.asImageBitmap(),
-                                contentDescription =
-                                    "QR code containing the $worksheetTitle worksheet",
-                                modifier = Modifier
-                                    .size(160.dp)
-                                    .background(Color.White, RoundedCornerShape(8.dp))
-                                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
-                                    .padding(6.dp),
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Scan to read · कैमरे से स्कैन करें",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF475569),
-                                ),
-                            )
-                        }
-                    }
+                    // The QR is drawn in the left pane, not here. This rail is a fixed 440 dp
+                    // column and its content already fills it, so a 160 dp image appended at the
+                    // bottom was clipped off-screen — generated correctly, and invisible. The left
+                    // pane also gives it room to be scanned from further away.
 
                     Spacer(Modifier.height(6.dp))
 
