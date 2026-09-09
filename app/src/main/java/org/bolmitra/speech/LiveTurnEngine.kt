@@ -219,6 +219,51 @@ class LiveTurnEngine private constructor(
             )
         }
 
+    /**
+     * Runs one turn on text the teacher typed, skipping ASR.
+     *
+     * Exists because the Live Class "Translate" button used to call the phrasebook directly and
+     * play the clip, which meant typed Hindi never reached T1 at all: anything outside the seeded
+     * phrase list produced silence and no on-screen text. Routing through the same
+     * [TurnOrchestrator] as speech means typed input gets the identical ladder — T0, then T1, then
+     * the degrade rungs — and comes back carrying a [Provenance] rather than none.
+     *
+     * [turnStartMs] is still required and still counts against the deadline. Typing is not free:
+     * the class is waiting from the moment the button is pressed, so the budget projection must see
+     * the same clock it sees for speech.
+     */
+    suspend fun runTextTurn(hindi: String, turnStartMs: Long): TurnResult =
+        withContext(Dispatchers.Default) {
+            val o = orchestrator
+            if (o == null) {
+                return@withContext TurnResult(
+                    transcript = hindi,
+                    outcome = TurnOutcome.Unavailable(
+                        org.bolmitra.translate.DegradeReason.NO_TRANSLATION_AVAILABLE,
+                    ),
+                    asrMs = 0,
+                    totalMs = 0,
+                    note = "engines not loaded",
+                )
+            }
+
+            // Raw, not normalised. HindiNormalizer strips danda, spells digits as words and drops
+            // honorifics — right for phrasebook matching, wrong for a model trained on
+            // sentence-terminated text. The orchestrator does its own T0 matching.
+            val outcome = o.handle(hindi, turnStartMs)
+            val totalMs = SystemClock.elapsedRealtime() - turnStartMs
+
+            Log.d(TAG, "typed turn: '$hindi' -> $outcome in ${totalMs}ms")
+            TurnResult(
+                transcript = hindi,
+                outcome = outcome,
+                asrMs = 0,
+                totalMs = totalMs,
+                note = (player as? RenderingAudioPlayer)?.lastFailure,
+                typed = true,
+            )
+        }
+
     /** Everything the UI needs about one turn, including the timings §11.2 wants shown. */
     data class TurnResult(
         val transcript: String?,
@@ -226,6 +271,8 @@ class LiveTurnEngine private constructor(
         val asrMs: Long,
         val totalMs: Long,
         val note: String?,
+        /** True when this came from the keyboard rather than the microphone. */
+        val typed: Boolean = false,
     )
 
     val audioPlayer: AudioPlayer? get() = player

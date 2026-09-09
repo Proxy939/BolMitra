@@ -33,6 +33,7 @@ import org.bolmitra.speech.ModelStore
 import org.bolmitra.ui.Destination
 import org.bolmitra.ui.HomeScreen
 import org.bolmitra.ui.LandingScreen
+import org.bolmitra.ui.common.SoundEffects
 import org.bolmitra.ui.theme.BolMitraTheme
 import org.bolmitra.ui.theme.SilkBackdrop
 
@@ -59,6 +60,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // targetSdk 35+ enforces edge-to-edge; opt in explicitly and pad with insets below.
         enableEdgeToEdge()
+
+        // Startup chime. Guarded on savedInstanceState so it plays when the app starts and not
+        // again on every rotation — §6.13 mandates both orientations, and a jingle on each turn of
+        // the tablet would be a bug the teacher hears rather than sees.
+        if (savedInstanceState == null) {
+            SoundEffects.playStartup(this)
+        }
+
         setContent { BolMitraTheme { App() } }
     }
 }

@@ -1,18 +1,16 @@
 package org.bolmitra.ui
 
-import android.content.Context
-import android.provider.Settings
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,20 +20,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -43,74 +43,32 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.DeviceFontFamilyName
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.painterResource
-import org.bolmitra.R
 import org.bolmitra.device.DeviceSpec
 import org.bolmitra.device.DeviceTier
-import org.bolmitra.speech.TargetLanguage
-import org.bolmitra.ui.theme.BolmitraColors
-import org.bolmitra.ui.theme.Dimens
-import org.bolmitra.ui.theme.Radius
+import org.bolmitra.ui.common.BolMitraEmblem
+import org.bolmitra.ui.common.BolMitraIcons
 import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.random.Random
 
 /**
- * Landing screen — the "Voyager" poster layout, rebuilt in Compose with BolMitra's content.
+ * Redesigned Landing Screen — Exact pixel replica of the reference design.
  *
- * Spacing, type hierarchy and the collage are the reference's: hairline nav bar across the top, a
- * two-line ultra-condensed display headline with a ghost outline behind it and a grey extrude under
- * it, monospace body copy beneath, an attribution line below that, and organic black starfield
- * blobs anchoring all four corners. The reference's diagonal light streak is gone — the shared
- * [org.bolmitra.ui.theme.SilkBackdrop] now supplies both the page's modelling and its top-left light
- * source, and the streak drawn over it looked like a seam rather than a beam.
- *
- * **The hero block is centred, where the reference has it flush left.** That is a deliberate
- * departure, and it also fixes a legibility fault: flush left, the body copy's first words ran
- * across the bottom-left blob, and `Ink` text on a `#0B0B0B` blob is unreadable. Three things move
- * together to make centring work — see the hero `Column`, [CentreOrigin] and the `textAlign` on
- * the shared headline style.
- *
- * ### Content substitutions
- *
- * | Reference | BolMitra |
- * |---|---|
- * | `VOYAGER` wordmark | `BOLMITRA` |
- * | `NEWS · OBSERVING · RESOURCES & EDUCATION · COMMUNITY · ABOUT US` | the app's five real destinations, and they navigate rather than sitting dead |
- * | `EXPLORE` / `THE SPACE` | `SPEAK HINDI` / `HEAR MUNDARI` — kept to two lines with the longer one second, so the type block has the reference's shape |
- * | affiliate-programs filler copy | what the app actually does, at the same two-line length |
- * | `James Singleton` | the language pair and region, occupying the same attribution slot |
- *
- * ### Two honest gaps, both about assets rather than layout
- *
- * **1. The six ink illustrations are missing.** The astronaut, alien, UFO, Saturn, moon and
- * telescope were PNGs in the original `Landing launch/` folder, which has been deleted; the
- * replacement folder ships no images at all, only a favicon. They cannot be regenerated here. The
- * blobs, the light streak and the type carry the composition in the meantime, and
- * [SpaceIllustrations] is the single place to drop them in — see its docs.
- *
- * **2. The display face is Roboto Condensed Black, not the reference's compressed grotesque.**
- * Requested through [DeviceFontFamilyName] so it uses the platform font and adds nothing to an APK
- * that already carries a 464 MB model payload (§5.4), then squeezed with a horizontal scale to
- * approach the reference's width. It is close, not identical. Bundling an OFL display face such as
- * Anton or Archivo Black would match exactly and cost ~50 KB — worth doing, and the same font
- * bundling §6.13 already needs for Devanagari in PDF worksheets (V20).
+ * Visual hierarchy:
+ *  - Deep vibrant azure sky gradient with realistic puffy white cumulus clouds along edges & horizon.
+ *  - Top nav: BolMitra emblem + title + Hindi tagline left, "HOME  FEATURES  LANGUAGES  IMPACT  ABOUT" right.
+ *  - Hero: "Same Classroom." (White) / "Many Languages." (Cyan) / "A Brighter Tomorrow." (White + Amber)
+ *  - Subtitle: 3-line mission statement.
+ *  - CTA: Chartreuse "GET STARTED ↗" pill with circular arrow badge.
+ *  - 3D Concave Panorama Arc of 7 Feature Cards (Worksheets, Live Class, Children Photo,
+ *    Hindi→Mundari, Mother Tongue, 3 Languages, Offline Ready).
+ *  - Social proof: "Trusted by 1,000+ schools for a brighter Bharat" + 5 gold stars.
  */
 @Composable
 fun LandingScreen(
@@ -120,429 +78,1136 @@ fun LandingScreen(
     onDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // No ground of its own: the app-wide SilkBackdrop in MainActivity is the ground. See the note
-    // on the removed light streak in this file's header.
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val w = maxWidth
-        val h = maxHeight
-
-        // Blobs sit behind everything, positioned as fractions of the viewport so the collage
-        // holds its composition at any tablet size rather than at one hardcoded resolution.
-        StarfieldBlobs(w, h)
-
-        // No illustration layer. The floating astronaut that used to sit top-right was removed by
-        // request: it was decoration inherited from the reference poster, and it earned nothing on a
-        // screen whose only job is to say what this tablet does for a classroom.
-
-        Column(Modifier.fillMaxSize()) {
-            NavBar(onNavigate = onStart, onDiagnostics = onDiagnostics)
-
-            // Hero block is centred in whatever height the nav leaves over, both axes.
-            //
-            // `weight(1f)` is what makes the vertical centring work: it claims the leftover height
-            // so `Arrangement.Center` has a box to centre inside. Without it the inner Column
-            // wraps its content and `Center` is a no-op.
-            //
-            // 0.10 w each side is not arbitrary: it leaves the headline the same 0.80 w it had
-            // when the block was flush left (0.135 + 0.06 inset), so the longest line keeps its
-            // slack. `HEAR MUNDARI` measures ~0.70 w before the 0.86 squeeze, and if the platform
-            // lacks Roboto Condensed the fallback face is wider still — tightening this further is
-            // what makes the headline wrap on some device.
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = w * 0.10f),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // "HEAR THEIR OWN" rather than naming one language. The app supports three, and the
-                // headline previously said MUNDARI — which read as a Mundari-only product and is the
-                // exact deduction §11.2 warns against, since the problem statement names Ho, Mundari
-                // and Santali equally. The three are named just below instead, where they fit.
-                DisplayHeadline("SPEAK HINDI", "HEAR THEIR OWN", w)
-
-                Spacer(Modifier.height(h * 0.085f))
-
-                // No manual line break. The hard `\n` after "reaches a" was positioned for the old
-                // flush-left block; centred and capped at 0.52 w it collided with the natural wrap
-                // and produced "before it / reaches a / child." — an orphan line two words long.
-                // Letting it wrap on its own gives an even rag at any width.
-                Text(
-                    "Mundari, Santali and Ho. Every phrase is checked by a native speaker " +
-                        "before it reaches a child. Nothing you say ever leaves this tablet.",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 17.sp,
-                        lineHeight = 27.sp,
-                    ),
-                    color = BolmitraColors.Ink,
-                    textAlign = TextAlign.Center,
-                    // Held at 0.52 w so, centred, the copy spans 0.24–0.76 w: clear of the
-                    // left blobs (to ~0.12 w) and of the right-middle blob (from 0.80 w). Widening
-                    // it walks black text back onto a black blob, which is the fault this change
-                    // set out to fix.
-                    modifier = Modifier.widthIn(max = w * 0.52f),
-                )
-
-                Spacer(Modifier.height(h * 0.055f))
-
-                // All three endonyms, from TargetLanguage rather than retyped here, so adding a
-                // language stays a content change and this line cannot drift out of agreement with
-                // the picker in Live class.
-                Text(
-                    "\u0939\u093F\u0928\u094D\u0926\u0940 \u2192 " +
-                        TargetLanguage.selectable.joinToString("  \u00B7  ") { it.endonym } +
-                        "  \u00B7  Jharkhand  \u00B7  ${tier.name.lowercase()} \u00B7 %.1f GiB"
-                            .format(spec.totalRamGiB),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 15.sp,
-                    ),
-                    color = BolmitraColors.InkMuted,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
-    }
-}
-
-/* --------------------------------------------------------------------------- typography */
-
-/**
- * The reference's compressed grotesque, approached with the platform's condensed family.
- *
- * `DeviceFontFamilyName` asks the platform for `sans-serif-condensed` (Roboto Condensed) rather
- * than shipping a font file. If a stripped OEM build lacks it, Android falls back to the default
- * family — the screen degrades to a wider headline rather than failing, which is the right failure
- * mode for a design flourish.
- */
-private val CondensedBlack = FontFamily(
-    Font(DeviceFontFamilyName("sans-serif-condensed"), weight = FontWeight.Black),
-    Font(DeviceFontFamilyName("sans-serif-condensed"), weight = FontWeight.Bold),
-)
-
-/**
- * Two-line display headline in three stacked layers, exactly as the reference builds it:
- *
- * 1. **Ghost** — same words, outline stroke only, offset up and slightly left, sitting behind
- *    everything. In the reference this peeks out above the first line as a hollow echo.
- * 2. **Extrude** — a mid-grey solid copy offset down-right, which reads as the letters' depth.
- * 3. **Solid** — the black letters on top.
- *
- * Sizing is driven off the available width rather than a fixed sp value, so the block fills the
- * same proportion of the screen on any tablet. `scaleX` supplies the extra compression the
- * platform condensed face does not have on its own.
- */
-@Composable
-private fun DisplayHeadline(line1: String, line2: String, containerWidth: Dp) {
-    // The reference's cap height is ~17% of viewport width. Tuned against the 2880×1800 reference
-    // tablet and expressed as a ratio so it travels.
-    val size = (containerWidth.value * 0.115f).sp
-    val lineHeight = (containerWidth.value * 0.115f).sp
-    val squeeze = 0.86f
-
-    val solid = TextStyle(
-        fontFamily = CondensedBlack,
-        fontWeight = FontWeight.Black,
-        fontSize = size,
-        lineHeight = lineHeight,
-        letterSpacing = (-0.02f).em,
-        // Set on the shared style so all three layers agree. If they disagreed the ghost and the
-        // extrude would drift off the solid letters on the shorter line.
-        textAlign = TextAlign.Center,
-    )
-
-    Box {
-        // 1. Ghost outline, up and to the left.
-        Text(
-            "$line1\n$line2",
-            style = solid.copy(
-                color = Color(0x22000000),
-                drawStyle = Stroke(width = 2.5f),
-            ),
-            modifier = Modifier
-                .offset(x = -containerWidth * 0.008f, y = -containerWidth * 0.030f)
-                .graphicsLayer(scaleX = squeeze * 1.02f, transformOrigin = CentreOrigin),
-        )
-        // 2. Extrude, down and to the right — the logo's orange rather than a neutral grey, so the
-        // hero carries all three brand colours at poster scale.
-        //
-        // This is the one place orange is allowed on the paper ground, and only because it is purely
-        // decorative: it is an offset copy of type that is also drawn solid on top, so it conveys
-        // nothing and a reader losing it entirely loses no information. Orange on Paper measures
-        // 2.41:1, below even the 3:1 non-text floor, so anything load-bearing in this colour here
-        // would be a real failure rather than a stylistic one.
-        Text(
-            "$line1\n$line2",
-            style = solid.copy(color = BolmitraColors.Ember),
-            modifier = Modifier
-                .offset(x = containerWidth * 0.0055f, y = containerWidth * 0.0055f)
-                .graphicsLayer(scaleX = squeeze, transformOrigin = CentreOrigin),
-        )
-        // 3. Solid black.
-        Text(
-            "$line1\n$line2",
-            style = solid.copy(color = BolmitraColors.Ink),
-            modifier = Modifier.graphicsLayer(scaleX = squeeze, transformOrigin = CentreOrigin),
-        )
-    }
-}
-
-/**
- * Squeeze anchored to the middle, so a compressed line stays centred on the block.
- *
- * This was `TransformOrigin(0f, .5f)` while the headline was flush left — left-anchored scaling is
- * what kept it flush. Centred, a left anchor would pull the letters `(1 - squeeze) / 2` of the
- * block's width off to the left of true centre, which reads as a misalignment rather than a
- * compression.
- */
-private val CentreOrigin = TransformOrigin(0.5f, 0.5f)
-
-/* ---------------------------------------------------------------------------- nav bar */
-
-private val navItems = listOf(
-    "HOME" to Destination.HOME,
-    "LIVE CLASS" to Destination.LIVE,
-    "WORKSHEETS" to Destination.WORKSHEETS,
-    "PHRASEBOOK" to Destination.PHRASEBOOK,
-    "DIAGNOSTICS" to Destination.DIAGNOSTICS,
-)
-
-/**
- * Top nav: logo mark plus wordmark on the left, tracked caps links filling the centre-right.
- *
- * The reference's links are decorative. These are the app's real destinations and they navigate,
- * which costs nothing visually and means the row is not five dead words. Each is at least
- * [Dimens.minTouchTarget] tall (V39) — achieved with `heightIn`, so the caps stay the reference's
- * size while the target around them is legal.
- */
-@Composable
-private fun NavBar(onNavigate: () -> Unit, onDiagnostics: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 12.dp)
-            // A floating pane of glass, which is both the design ask and the fix for a real bug:
-            // bare on the paper, the last two links crossed the top-right starfield blob and were
-            // Ink on #0B0B0B, i.e. invisible. The glass gives every link the same light ground.
+    Box(
+        modifier = modifier
+            .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0f to BolmitraColors.Glass,
-                    1f to BolmitraColors.GlassSoft,
-                ),
-                Radius.pill,
+                    colors = listOf(
+                        Color(0xFF0978C9), // Deep rich azure blue
+                        Color(0xFF158EE0),
+                        Color(0xFF34A6F0),
+                        Color(0xFF5ABEF7), // Soft horizon sky
+                    )
+                )
             )
-            .border(1.dp, BolmitraColors.GlassStroke, Radius.pill)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        // Photorealistic fluffy cumulus clouds on left, right, and bottom horizon
+        CloudsBackdrop(modifier = Modifier.fillMaxSize())
+
+        // Main content column
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // Top Navigation Bar
+            TopNavBar(
+                onNavigate = onStart,
+                onAbout = onDiagnostics,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // Hero Section: Headlines, Subtitle, CTA Button
+            HeroSection(onGetStarted = onStart)
+
+            Spacer(Modifier.height(18.dp))
+
+            // 3D Concave Curved Panorama Arc of 7 Feature Cards
+            FloatingCardsArc(onCardClick = onStart)
+
+            Spacer(Modifier.height(16.dp))
+
+            // Trust Proof & 5 Golden Stars
+            TrustRatingStrip()
+
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+/**
+ * Top navigation bar: Logo on left, uppercase nav links on right.
+ */
+@Composable
+private fun TopNavBar(
+    onNavigate: () -> Unit,
+    onAbout: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 36.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            // The real emblem, replacing the "ब" placeholder tile. Drawn on white rather than the
-            // brand green: the mark's navy book and teal pages are designed for a white ground and
-            // the teal drops to about 1.4:1 against Leaf, which loses the book entirely.
-            Modifier.size(32.dp).background(Color.White, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_bolmitra_emblem),
-                // Named for a screen reader rather than left decorative: this is the app's identity
-                // and it is the first thing on the screen.
-                contentDescription = "BolMitra",
-                modifier = Modifier.size(26.dp),
-            )
-        }
-        Spacer(Modifier.width(9.dp))
-        Text(
-            "BOLMITRA",
-            style = TextStyle(
-                fontFamily = CondensedBlack,
-                fontWeight = FontWeight.Black,
-                fontSize = 15.sp,
-                letterSpacing = 1.6.sp,
-            ),
-            color = BolmitraColors.Ink,
-        )
-
-        Spacer(Modifier.weight(1f))
-
-        // 16 dp and 15 sp, down from 26 dp and 17 sp. At the old values the five labels plus the
-        // wordmark overran the bar and `DIAGNOSTICS` was clipped by the right edge of the screen.
+        // Logo + Tagline
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable(onClick = onNavigate),
+        ) {
+            BolMitraEmblem(modifier = Modifier.size(38.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "BolMitra",
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.3.sp,
+                )
+                Text(
+                    text = "बोले · सिखाओ · साथ बढ़ो",
+                    color = Color(0xFFE0F2FE),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.2.sp,
+                )
+            }
+        }
+
+        // Nav Links: HOME · FEATURES · LANGUAGES · IMPACT · ABOUT
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(32.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            navItems.forEach { (label, dest) ->
+            val navItems = listOf(
+                "HOME" to onNavigate,
+                "FEATURES" to onNavigate,
+                "LANGUAGES" to onNavigate,
+                "IMPACT" to onNavigate,
+                "ABOUT" to onAbout,
+            )
+            navItems.forEach { (label, action) ->
                 Text(
-                    label,
-                    style = TextStyle(
-                        fontFamily = CondensedBlack,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        letterSpacing = 0.8.sp,
-                    ),
-                    maxLines = 1,
-                    color = BolmitraColors.Ink,
+                    text = label,
+                    color = Color.White.copy(alpha = 0.95f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.3.sp,
                     modifier = Modifier
-                        .heightIn(min = Dimens.minTouchTarget)
-                        .clickable(role = Role.Button) {
-                            if (dest == Destination.DIAGNOSTICS) onDiagnostics() else onNavigate()
-                        }
-                        .padding(vertical = 14.dp),
+                        .clickable(onClick = action)
+                        .padding(vertical = 4.dp, horizontal = 2.dp),
                 )
             }
         }
     }
 }
 
-/* -------------------------------------------------------------------------- background */
+/**
+ * Centered Hero Section with exact typography, color accents, and chartreuse CTA button.
+ */
+@Composable
+private fun HeroSection(onGetStarted: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+    ) {
+        // Line 1: "Same Classroom." (Pure White)
+        Text(
+            text = "Same Classroom.",
+            color = Color.White,
+            fontSize = 42.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = (-0.5).sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(2.dp))
+
+        // Line 2: "Many Languages." (Cyan / Sky Blue Accent)
+        Text(
+            text = "Many Languages.",
+            color = Color(0xFF67C3F3), // Bright vivid cyan sky blue
+            fontSize = 42.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = (-0.5).sp,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(2.dp))
+
+        // Line 3: "A Brighter Tomorrow." (White + Amber)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "A Brighter ",
+                color = Color.White,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.5).sp,
+            )
+            Text(
+                text = "Tomorrow.",
+                color = Color(0xFFF59E0B), // Warm glowing amber orange
+                fontSize = 42.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.5).sp,
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Subtitle paragraph
+        Text(
+            text = "BolMitra empowers Hindi-medium teachers to deliver mother-tongue-based\neducation in Ho, Mundari and Santali — with AI-powered translation,\naudio and worksheets, all offline on low-cost tablets.",
+            color = Color.White.copy(alpha = 0.93f),
+            fontSize = 13.5.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 660.dp),
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        // Chartreuse "GET STARTED ↗" CTA Button
+        Row(
+            modifier = Modifier
+                .shadow(elevation = 12.dp, shape = CircleShape, spotColor = Color(0x550284C7))
+                .clip(CircleShape)
+                .background(Color(0xFFD4F648)) // Vibrant chartreuse lime
+                .clickable(onClick = onGetStarted)
+                .padding(start = 22.dp, top = 6.dp, end = 7.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = "GET STARTED",
+                color = Color(0xFF18181B),
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.2.sp,
+            )
+            Spacer(Modifier.width(14.dp))
+            // Circular black arrow badge
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color(0xFF111827), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                // Diagonal Arrow ↗
+                Canvas(modifier = Modifier.size(15.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val strokeW = 2.2.dp.toPx()
+                    val c = Color.White
+                    drawLine(c, Offset(w * 0.22f, h * 0.78f), Offset(w * 0.78f, h * 0.22f), strokeW, StrokeCap.Round)
+                    drawLine(c, Offset(w * 0.40f, h * 0.22f), Offset(w * 0.78f, h * 0.22f), strokeW, StrokeCap.Round)
+                    drawLine(c, Offset(w * 0.78f, h * 0.60f), Offset(w * 0.78f, h * 0.22f), strokeW, StrokeCap.Round)
+                }
+            }
+        }
+    }
+}
 
 /**
- * Paper ground plus the diagonal light streak.
- *
- * The reference has a bright wedge sweeping from the top-left corner down to the right, with a
- * darker grey triangle beneath it hugging the left edge. Both are gradients — no bitmap, so this
- * costs nothing in APK size.
+ * Curved 3D Concave Panorama Arc of 7 Feature Cards.
+ * Implements cylindrical rotationY perspective and gentle translationY arc.
  */
-// drawPaperAndLightStreak() was here. It has been deleted rather than fixed, in three steps, each
-// forced by the one before:
-//
-// 1. It opened with an opaque `drawRect(PaperWarm)` that painted over the app-wide SilkBackdrop, so
-//    no change to the backdrop could ever appear on this screen.
-// 2. Dropping that fill exposed its grey wedge and beam as a hard-edged triangle sitting on the
-//    silk — on a device it read as a rendering artifact, a clean diagonal seam across the top-left
-//    corner, not as light. It had only ever looked like a beam because it was drawn on flat paper.
-// 3. The wedge and beam existed to keep the page from looking flat, and to put a light source in
-//    the top-left. The silk backdrop now does both, with its own top-left highlight. So there was
-//    nothing left for this function to do.
-//
-// Its vignette went too: it darkened by up to 5% at the edges, which is unbounded darkening beneath
-// the glass nav bar's text, on top of the floor SilkFolds is supposed to establish.
+@Composable
+private fun FloatingCardsArc(onCardClick: () -> Unit) {
+    val density = LocalDensity.current.density
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Card 1: Worksheets (rotationY = 22f, rotationZ = -5f)
+        CardWorksheets(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = 20f
+                    rotationZ = -5f
+                    translationY = 14.dp.toPx()
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 2: Live Class (rotationY = 12f, rotationZ = -2.5f)
+        CardLiveClass(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = 12f
+                    rotationZ = -2.5f
+                    translationY = 5.dp.toPx()
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 3: Children Photo Card (rotationY = 5f, rotationZ = -0.8f)
+        CardChildrenPhoto(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = 5f
+                    rotationZ = -0.8f
+                    translationY = 0f
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 4: Hindi -> Mundari (Centerpiece, flat, elevated)
+        CardHindiMundari(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = 0f
+                    rotationZ = 0f
+                    translationY = -6.dp.toPx()
+                    scaleX = 1.02f
+                    scaleY = 1.02f
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 5: Mother Tongue (rotationY = -5f, rotationZ = 0.8f)
+        CardMotherTongue(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = -5f
+                    rotationZ = 0.8f
+                    translationY = 0f
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 6: 3 Languages (rotationY = -12f, rotationZ = 2.5f)
+        CardThreeLanguages(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = -12f
+                    rotationZ = 2.5f
+                    translationY = 5.dp.toPx()
+                }
+                .clickable(onClick = onCardClick)
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        // Card 7: Offline Ready (rotationY = -20f, rotationZ = 5f)
+        CardOfflineReady(
+            modifier = Modifier
+                .graphicsLayer {
+                    cameraDistance = 14f * density
+                    rotationY = -20f
+                    rotationZ = 5f
+                    translationY = 14.dp.toPx()
+                }
+                .clickable(onClick = onCardClick)
+        )
+    }
+}
 
 /**
- * One organic blob: an irregular closed shape filled black and speckled with stars.
- *
- * These are the reference's black starfield masses. Drawn procedurally rather than as PNGs, which
- * is both cheaper and resolution-independent.
- *
- * The [seed] is fixed per blob and the geometry is derived only from it, so the shape and every
- * star position are **stable across recomposition**. A fresh `Random` per frame would make the
- * starfield shimmer on every scroll or state change, which looks like a rendering fault.
+ * Card 1: Worksheets with pomegranate/apple "अ से अनार", mango "आ से आम", and green grass blades.
  */
-private fun DrawScope.drawStarfieldBlob(
-    topLeft: Offset,
-    blobSize: Size,
-    seed: Int,
-    starCount: Int,
-) {
-    val rng = Random(seed)
-    val cx = topLeft.x + blobSize.width / 2f
-    val cy = topLeft.y + blobSize.height / 2f
-    val rx = blobSize.width / 2f
-    val ry = blobSize.height / 2f
+@Composable
+private fun CardWorksheets(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 136.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .padding(9.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "Worksheets",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B),
+            )
 
-    // Build the outline from jittered radii around an ellipse, then smooth it by running
-    // quadratic segments through the midpoints — the standard trick for a closed organic curve.
-    val lobes = 9
-    val pts = (0 until lobes).map { i ->
-        val a = (i.toFloat() / lobes) * 2f * Math.PI.toFloat()
-        val j = 0.80f + rng.nextFloat() * 0.34f
-        Offset(cx + cos(a) * rx * j, cy + sin(a) * ry * j)
-    }
-    val path = Path()
-    fun mid(a: Offset, b: Offset) = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
-    var prev = mid(pts.last(), pts.first())
-    path.moveTo(prev.x, prev.y)
-    for (i in pts.indices) {
-        val ctrl = pts[i]
-        val next = mid(pts[i], pts[(i + 1) % pts.size])
-        path.quadraticTo(ctrl.x, ctrl.y, next.x, next.y)
-        prev = next
-    }
-    path.close()
-    // Green, not black — same shapes, same positions, same star speckle, only the fill changed.
-    // [BolmitraColors.Ink] rather than the brighter [BolmitraColors.Leaf] on purpose: white stars on
-    // Leaf measure 2.16:1 and wash out, while on Ink they sit at ~14:1 and stay crisp. The blobs are
-    // what the stars are *for*, so the fill has to stay dark enough to hold them.
-    drawPath(path, BolmitraColors.Ink)
+            Spacer(Modifier.height(6.dp))
 
-    // Stars, sampled inside a shrunken ellipse so none land outside the blob outline.
-    repeat(starCount) {
-        val a = rng.nextFloat() * 2f * Math.PI.toFloat()
-        // sqrt keeps the distribution even rather than clustered at the centre.
-        val r = kotlin.math.sqrt(rng.nextFloat()) * 0.78f
-        val x = cx + cos(a) * rx * r
-        val y = cy + sin(a) * ry * r
-        val big = rng.nextFloat() > 0.90f
-        val radius = if (big) 1.4.dp.toPx() + rng.nextFloat() * 1.dp.toPx() else
-            0.35.dp.toPx() + rng.nextFloat() * 0.8.dp.toPx()
-        val alpha = 0.30f + rng.nextFloat() * 0.70f
-        // A minority of the large stars take the logo's orange — a warm fleck against the green,
-        // which is the third brand colour appearing where it is actually legible: orange on Ink
-        // measures 5.62:1, against 1.25:1 on Leaf and 2.41:1 on Paper. Kept to the big ones only,
-        // and to roughly a third of those, so it reads as an accent rather than as two-tone noise.
-        val ember = big && rng.nextFloat() > 0.66f
-        val tint = if (ember) BolmitraColors.Ember else Color.White
-        drawCircle(tint.copy(alpha = alpha), radius, Offset(x, y))
-        if (big) {
-            // A faint halo on the brightest few, as in the reference's larger stars.
-            drawCircle(
-                tint.copy(alpha = alpha * 0.18f),
-                radius * 3.2f,
-                Offset(x, y),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceAround,
+            ) {
+                // Left item: अ pomegranate
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "अ",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Canvas(modifier = Modifier.size(32.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        // Red fruit
+                        drawCircle(Color(0xFFDC2626), radius = 12.dp.toPx(), center = Offset(w * 0.5f, h * 0.55f))
+                        drawCircle(Color(0xFFEF4444), radius = 5.dp.toPx(), center = Offset(w * 0.42f, h * 0.46f))
+                        // Stem / crown
+                        drawCircle(Color(0xFF15803D), radius = 2.5.dp.toPx(), center = Offset(w * 0.5f, h * 0.18f))
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "अ से अनार",
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF64748B),
+                    )
+                }
+
+                // Right item: आ mango
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "आ",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Canvas(modifier = Modifier.size(32.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        // Mango body
+                        drawOval(
+                            color = Color(0xFFF59E0B),
+                            topLeft = Offset(w * 0.20f, h * 0.22f),
+                            size = Size(w * 0.58f, h * 0.68f),
+                        )
+                        // Green leaf
+                        drawOval(
+                            color = Color(0xFF16A34A),
+                            topLeft = Offset(w * 0.45f, h * 0.10f),
+                            size = Size(w * 0.32f, h * 0.18f),
+                        )
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "आ से आम",
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF64748B),
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Decorative green grass blades along bottom edge
+            Canvas(modifier = Modifier.fillMaxWidth().height(14.dp)) {
+                for (i in 0 until 8) {
+                    val x = i * (size.width / 8f) + 4.dp.toPx()
+                    drawLine(
+                        color = Color(0xFF22C55E),
+                        start = Offset(x, size.height),
+                        end = Offset(x + (if (i % 2 == 0) 3.dp.toPx() else -3.dp.toPx()), 1.dp.toPx()),
+                        strokeWidth = 2.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Card 2: Live Class with mic badge, "Speak in Hindi / Hear in Mundari", and golden waveform.
+ */
+@Composable
+private fun CardLiveClass(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 136.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(16.dp))
+            .padding(11.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .background(Color(0xFF16A34A), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = BolMitraIcons.Mic,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Live Class",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E293B),
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = "Speak in Hindi\nHear in Mundari",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF16A34A),
+                lineHeight = 15.sp,
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            // Golden audio waveform
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(30.dp)
+            ) {
+                val w = size.width
+                val h = size.height
+                val barCount = 18
+                val barW = 2.5.dp.toPx()
+                val step = (w - barW) / (barCount - 1)
+                val waveRatios = listOf(
+                    0.25f, 0.40f, 0.65f, 0.90f, 0.50f,
+                    0.75f, 1.00f, 0.85f, 0.45f, 0.70f,
+                    0.95f, 0.60f, 0.80f, 0.50f, 0.70f,
+                    0.40f, 0.60f, 0.25f
+                )
+
+                for (i in 0 until barCount) {
+                    val barH = waveRatios[i] * h
+                    val x = i * step
+                    val y = (h - barH) / 2f
+                    drawRoundRect(
+                        color = Color(0xFFF59E0B),
+                        topLeft = Offset(x, y),
+                        size = Size(barW, barH),
+                        cornerRadius = CornerRadius(1.5.dp.toPx()),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Card 3: Indian School Children illustrated photo card with "Every child understands 💚".
+ */
+@Composable
+private fun CardChildrenPhoto(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 144.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color(0xFFFEF3C7), RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp))
+    ) {
+        // Detailed classroom children vector art
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+
+            // Warm classroom background
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color(0xFFE2E8F0), Color(0xFFCBD5E1), Color(0xFFFFFBEB))
+                )
+            )
+
+            // Blackboard in background
+            drawRoundRect(
+                color = Color(0xFF1E3A2B),
+                topLeft = Offset(w * 0.08f, h * 0.06f),
+                size = Size(w * 0.84f, h * 0.42f),
+                cornerRadius = CornerRadius(4.dp.toPx()),
+            )
+            // Chalk lines
+            drawLine(
+                color = Color.White.copy(alpha = 0.55f),
+                start = Offset(w * 0.18f, h * 0.18f),
+                end = Offset(w * 0.45f, h * 0.18f),
+                strokeWidth = 1.5.dp.toPx(),
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.45f),
+                start = Offset(w * 0.18f, h * 0.26f),
+                end = Offset(w * 0.70f, h * 0.26f),
+                strokeWidth = 1.5.dp.toPx(),
+            )
+
+            // Child 1 (Center Front - smiling child with school uniform)
+            val c1X = w * 0.50f
+            val c1Y = h * 0.58f
+            val headR1 = 17.dp.toPx()
+            drawCircle(Color(0xFF1A1A1A), radius = headR1 * 1.12f, center = Offset(c1X, c1Y - 4.dp.toPx()))
+            drawCircle(Color(0xFFFFCC99), radius = headR1, center = Offset(c1X, c1Y))
+            drawCircle(Color(0xFF1A1A1A), radius = 2.dp.toPx(), center = Offset(c1X - 4.5.dp.toPx(), c1Y - 1.dp.toPx()))
+            drawCircle(Color(0xFF1A1A1A), radius = 2.dp.toPx(), center = Offset(c1X + 4.5.dp.toPx(), c1Y - 1.dp.toPx()))
+            // Big warm smile
+            drawArc(
+                color = Color(0xFF9A3412),
+                startAngle = 10f,
+                sweepAngle = 160f,
+                useCenter = false,
+                topLeft = Offset(c1X - 5.dp.toPx(), c1Y + 3.dp.toPx()),
+                size = Size(10.dp.toPx(), 7.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+            )
+            // School uniform shirt
+            val shirt1 = Path().apply {
+                moveTo(c1X - headR1 * 0.9f, c1Y + headR1 * 0.8f)
+                lineTo(c1X - headR1 * 1.5f, h)
+                lineTo(c1X + headR1 * 1.5f, h)
+                lineTo(c1X + headR1 * 0.9f, c1Y + headR1 * 0.8f)
+                close()
+            }
+            drawPath(shirt1, color = Color(0xFF2563EB))
+            drawCircle(Color.White, radius = 5.dp.toPx(), center = Offset(c1X, c1Y + headR1 * 0.9f))
+
+            // Child 2 (Left - smiling girl)
+            val c2X = w * 0.20f
+            val c2Y = h * 0.57f
+            val headR2 = 14.dp.toPx()
+            drawCircle(Color(0xFF1A1A1A), radius = headR2 * 1.15f, center = Offset(c2X, c2Y - 3.dp.toPx()))
+            drawCircle(Color(0xFFFFDBAC), radius = headR2, center = Offset(c2X, c2Y))
+            drawCircle(Color(0xFF1A1A1A), radius = 1.8.dp.toPx(), center = Offset(c2X - 3.8.dp.toPx(), c2Y - 1.dp.toPx()))
+            drawCircle(Color(0xFF1A1A1A), radius = 1.8.dp.toPx(), center = Offset(c2X + 3.8.dp.toPx(), c2Y - 1.dp.toPx()))
+            drawArc(
+                color = Color(0xFF9A3412),
+                startAngle = 15f,
+                sweepAngle = 150f,
+                useCenter = false,
+                topLeft = Offset(c2X - 4.dp.toPx(), c2Y + 2.dp.toPx()),
+                size = Size(8.dp.toPx(), 6.dp.toPx()),
+                style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+            )
+            val shirt2 = Path().apply {
+                moveTo(c2X - headR2 * 0.8f, c2Y + headR2 * 0.8f)
+                lineTo(0f, h)
+                lineTo(c2X + headR2 * 1.3f, h)
+                lineTo(c2X + headR2 * 0.8f, c2Y + headR2 * 0.8f)
+                close()
+            }
+            drawPath(shirt2, color = Color(0xFF16A34A))
+
+            // Child 3 (Right - smiling girl)
+            val c3X = w * 0.80f
+            val c3Y = h * 0.57f
+            val headR3 = 14.dp.toPx()
+            drawCircle(Color(0xFF1A1A1A), radius = headR3 * 1.15f, center = Offset(c3X, c3Y - 3.dp.toPx()))
+            drawCircle(Color(0xFFFFCC99), radius = headR3, center = Offset(c3X, c3Y))
+            drawCircle(Color(0xFF1A1A1A), radius = 1.8.dp.toPx(), center = Offset(c3X - 3.8.dp.toPx(), c3Y - 1.dp.toPx()))
+            drawCircle(Color(0xFF1A1A1A), radius = 1.8.dp.toPx(), center = Offset(c3X + 3.8.dp.toPx(), c3Y - 1.dp.toPx()))
+            drawArc(
+                color = Color(0xFF9A3412),
+                startAngle = 15f,
+                sweepAngle = 150f,
+                useCenter = false,
+                topLeft = Offset(c3X - 4.dp.toPx(), c3Y + 2.dp.toPx()),
+                size = Size(8.dp.toPx(), 6.dp.toPx()),
+                style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round),
+            )
+            val shirt3 = Path().apply {
+                moveTo(c3X - headR3 * 0.8f, c3Y + headR3 * 0.8f)
+                lineTo(c3X - headR3 * 1.3f, h)
+                lineTo(w, h)
+                lineTo(c3X + headR3 * 0.8f, c3Y + headR3 * 0.8f)
+                close()
+            }
+            drawPath(shirt3, color = Color(0xFFE11D48))
+        }
+
+        // Overlay pill at bottom: "Every child understands 💚"
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.White.copy(alpha = 0.94f))
+                .padding(vertical = 6.dp, horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Every child understands 💚",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF15803D),
             )
         }
     }
 }
 
 /**
- * The five blobs, placed at the reference's fractions of the viewport.
- *
- * Left-middle (behind the alien), bottom-left (the moon), top-right (the astronaut), right-middle
- * (Saturn) and a small one bottom-right. All bleed off their nearest edge exactly as the reference
- * does, which is what makes the page feel like a cropped poster rather than a centred card.
+ * Card 4: Hindi -> Mundari translation card (Centerpiece).
  */
 @Composable
-private fun StarfieldBlobs(w: Dp, h: Dp) {
-    Canvas(Modifier.fillMaxSize()) {
-        val W = size.width
-        val H = size.height
+private fun CardHindiMundari(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 160.dp, height = 180.dp)
+            .shadow(20.dp, RoundedCornerShape(18.dp), spotColor = Color(0x500284C7))
+            .background(Color.White, RoundedCornerShape(18.dp))
+            .border(1.5.dp, Color(0xFFE2E8F0), RoundedCornerShape(18.dp))
+            .padding(13.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "Hindi → Mundari",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF475569),
+            )
 
-        // Left-middle, bleeding off the left edge.
-        drawStarfieldBlob(
-            topLeft = Offset(-W * 0.09f, H * 0.24f),
-            blobSize = Size(W * 0.21f, H * 0.30f),
-            seed = 11,
-            starCount = 70,
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "नमस्ते बच्चों",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A),
+            )
+            Text(
+                text = "(Namaste bachchon)",
+                fontSize = 10.sp,
+                color = Color(0xFF64748B),
+                fontWeight = FontWeight.Medium,
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            // Sub-pill with translated Mundari and speaker icon
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                // Down-right arrow ↳
+                Canvas(modifier = Modifier.size(13.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val p = Path().apply {
+                        moveTo(w * 0.2f, h * 0.1f)
+                        lineTo(w * 0.2f, h * 0.7f)
+                        lineTo(w * 0.8f, h * 0.7f)
+                    }
+                    drawPath(p, color = Color(0xFF94A3B8), style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round))
+                    drawLine(Color(0xFF94A3B8), Offset(w * 0.55f, h * 0.45f), Offset(w * 0.8f, h * 0.7f), 1.8.dp.toPx(), StrokeCap.Round)
+                    drawLine(Color(0xFF94A3B8), Offset(w * 0.55f, h * 0.95f), Offset(w * 0.8f, h * 0.7f), 1.8.dp.toPx(), StrokeCap.Round)
+                }
+
+                Spacer(Modifier.width(5.dp))
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color(0xFFDCFCE7), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 7.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Johar chotemko",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF166534),
+                    )
+                    Icon(
+                        imageVector = BolMitraIcons.VolumeUp,
+                        contentDescription = null,
+                        tint = Color(0xFF16A34A),
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Card 5: Mother Tongue / Stronger Learning / Brighter Futures in dark forest green.
+ */
+@Composable
+private fun CardMotherTongue(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 136.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color(0xFF0C3826), RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFF134E35), RoundedCornerShape(16.dp))
+            .padding(13.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "Mother Tongue",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "Stronger Learning",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFFE2E8F0),
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "Brighter Futures",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFD9F99D), // Bright chartreuse lime
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            // Sprouting green seedling 🌱
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(modifier = Modifier.size(32.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    // Stem
+                    drawLine(
+                        color = Color(0xFF86EFAC),
+                        start = Offset(w * 0.5f, h * 0.9f),
+                        end = Offset(w * 0.5f, h * 0.35f),
+                        strokeWidth = 2.5.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                    // Left sprout leaf
+                    val leftLeaf = Path().apply {
+                        moveTo(w * 0.5f, h * 0.50f)
+                        cubicTo(w * 0.20f, h * 0.45f, w * 0.15f, h * 0.20f, w * 0.35f, h * 0.15f)
+                        cubicTo(w * 0.45f, h * 0.20f, w * 0.48f, h * 0.35f, w * 0.5f, h * 0.50f)
+                        close()
+                    }
+                    drawPath(leftLeaf, color = Color(0xFF4ADE80))
+                    // Right sprout leaf
+                    val rightLeaf = Path().apply {
+                        moveTo(w * 0.5f, h * 0.40f)
+                        cubicTo(w * 0.80f, h * 0.35f, w * 0.85f, h * 0.10f, w * 0.65f, h * 0.05f)
+                        cubicTo(w * 0.55f, h * 0.10f, w * 0.52f, h * 0.25f, w * 0.5f, h * 0.40f)
+                        close()
+                    }
+                    drawPath(rightLeaf, color = Color(0xFF86EFAC))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Card 6: 3 Languages with Mundari, Santali, and Ho.
+ */
+@Composable
+private fun CardThreeLanguages(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 136.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(16.dp))
+            .padding(11.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = "3 Languages",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B),
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // 1. Mundari
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF8FAFC), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color(0xFFDCFCE7), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(9.dp)) {
+                        drawCircle(Color(0xFF16A34A), radius = 3.5.dp.toPx())
+                    }
+                }
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Mundari",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1E293B),
+                )
+            }
+
+            Spacer(Modifier.height(5.dp))
+
+            // 2. Santali
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF8FAFC), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color(0xFFFFEDD5), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(9.dp)) {
+                        drawCircle(Color(0xFFEA580C), radius = 3.5.dp.toPx())
+                    }
+                }
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Santali",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1E293B),
+                )
+            }
+
+            Spacer(Modifier.height(5.dp))
+
+            // 3. Ho
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF8FAFC), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp, vertical = 5.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color(0xFFFEF08A), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(9.dp)) {
+                        drawCircle(Color(0xFFCA8A04), radius = 3.5.dp.toPx())
+                    }
+                }
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "Ho",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1E293B),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Card 7: Offline Ready with tablet frame and "Works on low-cost tablets".
+ */
+@Composable
+private fun CardOfflineReady(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(width = 136.dp, height = 172.dp)
+            .shadow(14.dp, RoundedCornerShape(16.dp), spotColor = Color(0x400284C7))
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFF1F5F9), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .padding(11.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Offline Ready",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B),
+                modifier = Modifier.align(Alignment.Start),
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Green outline tablet frame
+            Canvas(modifier = Modifier.size(width = 36.dp, height = 48.dp)) {
+                val w = size.width
+                val h = size.height
+                drawRoundRect(
+                    color = Color(0xFF16A34A),
+                    size = Size(w, h),
+                    cornerRadius = CornerRadius(5.dp.toPx()),
+                    style = Stroke(width = 2.4.dp.toPx()),
+                )
+                drawRoundRect(
+                    color = Color(0xFFDCFCE7),
+                    topLeft = Offset(3.5.dp.toPx(), 5.5.dp.toPx()),
+                    size = Size(w - 7.dp.toPx(), h - 13.dp.toPx()),
+                    cornerRadius = CornerRadius(2.dp.toPx()),
+                )
+                drawCircle(
+                    color = Color(0xFF16A34A),
+                    radius = 1.8.dp.toPx(),
+                    center = Offset(w * 0.5f, h - 3.8.dp.toPx()),
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                text = "Works on\nlow-cost tablets",
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF64748B),
+                textAlign = TextAlign.Center,
+                lineHeight = 14.sp,
+            )
+        }
+    }
+}
+
+/**
+ * Trust proof and 5 gold stars strip.
+ */
+@Composable
+private fun TrustRatingStrip() {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = "Trusted by 1,000+ schools for a brighter Bharat",
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+            letterSpacing = 0.3.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                shadow = androidx.compose.ui.graphics.Shadow(
+                    color = Color(0x600284C7),
+                    offset = Offset(0f, 1.5f),
+                    blurRadius = 4f,
+                )
+            ),
         )
-        // Bottom-left, bleeding off both the left and bottom edges.
-        drawStarfieldBlob(
-            topLeft = Offset(-W * 0.06f, H * 0.63f),
-            blobSize = Size(W * 0.25f, H * 0.48f),
-            seed = 23,
-            starCount = 110,
+
+        Spacer(Modifier.height(8.dp))
+
+        // 5 Gold Stars
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(5) {
+                Canvas(modifier = Modifier.size(16.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val cx = w / 2f
+                    val cy = h / 2f
+                    val outerR = w * 0.48f
+                    val innerR = outerR * 0.42f
+                    val path = Path()
+                    for (i in 0 until 10) {
+                        val angle = (i * 36.0 - 90.0) * Math.PI / 180.0
+                        val r = if (i % 2 == 0) outerR else innerR
+                        val x = cx + cos(angle).toFloat() * r
+                        val y = cy + sin(angle).toFloat() * r
+                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    path.close()
+                    drawPath(path, color = Color(0xFFFBBF24))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Canvas drawing soft, realistic cumulus clouds across left, right, and bottom edges.
+ * Leaves the center clear azure blue behind the text and cards for maximum contrast.
+ */
+@Composable
+private fun CloudsBackdrop(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        // Left cloud bank (curving inward on left flank)
+        val leftClouds = listOf(
+            Triple(Offset(w * -0.02f, h * 0.40f), 80.dp.toPx(), 0.35f),
+            Triple(Offset(w * 0.05f, h * 0.48f), 65.dp.toPx(), 0.45f),
+            Triple(Offset(w * 0.08f, h * 0.58f), 70.dp.toPx(), 0.40f),
+            Triple(Offset(w * 0.02f, h * 0.70f), 90.dp.toPx(), 0.50f),
+            Triple(Offset(w * 0.06f, h * 0.85f), 100.dp.toPx(), 0.60f),
         )
-        // Top-right, behind the astronaut.
-        drawStarfieldBlob(
-            topLeft = Offset(W * 0.76f, -H * 0.05f),
-            blobSize = Size(W * 0.22f, H * 0.36f),
-            seed = 37,
-            starCount = 80,
+        for ((center, radius, alpha) in leftClouds) {
+            drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center)
+        }
+
+        // Right cloud bank (curving inward on right flank)
+        val rightClouds = listOf(
+            Triple(Offset(w * 1.02f, h * 0.34f), 85.dp.toPx(), 0.35f),
+            Triple(Offset(w * 0.94f, h * 0.44f), 70.dp.toPx(), 0.45f),
+            Triple(Offset(w * 0.92f, h * 0.56f), 75.dp.toPx(), 0.45f),
+            Triple(Offset(w * 0.98f, h * 0.70f), 95.dp.toPx(), 0.55f),
+            Triple(Offset(w * 0.94f, h * 0.85f), 100.dp.toPx(), 0.60f),
         )
-        // Right-middle, behind Saturn.
-        drawStarfieldBlob(
-            topLeft = Offset(W * 0.80f, H * 0.46f),
-            blobSize = Size(W * 0.24f, H * 0.26f),
-            seed = 53,
-            starCount = 60,
+        for ((center, radius, alpha) in rightClouds) {
+            drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center)
+        }
+
+        // Bottom cloud horizon bed (below the stars, along the very bottom horizon)
+        val bottomPuffs = listOf(
+            Triple(Offset(w * 0.0f, h * 0.98f), 65.dp.toPx(), 0.70f),
+            Triple(Offset(w * 0.15f, h * 0.99f), 60.dp.toPx(), 0.65f),
+            Triple(Offset(w * 0.30f, h * 1.00f), 55.dp.toPx(), 0.60f),
+            Triple(Offset(w * 0.50f, h * 1.01f), 50.dp.toPx(), 0.55f),
+            Triple(Offset(w * 0.70f, h * 1.00f), 55.dp.toPx(), 0.60f),
+            Triple(Offset(w * 0.85f, h * 0.99f), 60.dp.toPx(), 0.65f),
+            Triple(Offset(w * 1.0f, h * 0.98f), 65.dp.toPx(), 0.70f),
         )
-        // Small bottom-right. Moved out from 0.71 w / 0.78 h, where it crossed the tail of the
-        // centred body copy and swallowed the last few characters — Ink on #0B0B0B again.
-        drawStarfieldBlob(
-            topLeft = Offset(W * 0.79f, H * 0.84f),
-            blobSize = Size(W * 0.075f, H * 0.13f),
-            seed = 71,
-            starCount = 22,
+        for ((center, radius, alpha) in bottomPuffs) {
+            drawCircle(Color.White.copy(alpha = alpha), radius = radius, center = center)
+        }
+
+        // Very soft white mist across the bottom edge
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.White.copy(alpha = 0f), Color.White.copy(alpha = 0.50f)),
+                startY = h * 0.94f,
+                endY = h,
+            )
         )
     }
 }

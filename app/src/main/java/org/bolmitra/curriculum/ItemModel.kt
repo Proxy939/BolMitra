@@ -22,6 +22,21 @@ import kotlin.random.Random
  */
 
 /**
+ * Matches a `{slot}` placeholder.
+ *
+ * **The closing brace must stay escaped, and a JVM unit test cannot prove it.** This was
+ * `"""\{([^}]+)}"""` — a bare `}` — which `java.util.regex` accepts as a literal, so every
+ * desktop test passed. Android's `java.util.regex` is ICU-backed and rejects it outright with
+ * `PatternSyntaxException: Syntax error in regexp pattern near index 10`, so the first tap on a
+ * generate button killed the process. Nothing about the platform difference is visible from the
+ * test suite; it only appeared in logcat on the tablet.
+ *
+ * Hoisted to a `val` as well as fixed: it was being recompiled once per template per item, inside
+ * the generation loop.
+ */
+private val SLOT_PATTERN = Regex("""\{([^}]+)\}""")
+
+/**
  * A template variable.
  *
  * The distinction is Bejar's, via V40, and it is the load-bearing idea: changing an incidental
@@ -121,7 +136,7 @@ data class ItemModel(
     }
 
     private fun referencedSlots(template: String): Set<String> =
-        Regex("""\{([^}]+)}""").findAll(template).map { it.groupValues[1] }.toSet()
+        SLOT_PATTERN.findAll(template).map { it.groupValues[1] }.toSet()
 }
 
 /** One concrete item. Identity is `(modelId, seed)` — see [ItemGenerator]. */
@@ -189,7 +204,7 @@ object ItemGenerator {
     }
 
     private fun fill(template: String, bindings: Map<String, String>): String =
-        Regex("""\{([^}]+)}""").replace(template) { m ->
+        SLOT_PATTERN.replace(template) { m ->
             bindings[m.groupValues[1]] ?: m.value
         }
 }

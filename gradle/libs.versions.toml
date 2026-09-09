@@ -26,6 +26,9 @@ room = "2.8.4"
 onnxruntime = "1.29.0"
 # KSP moved to standalone versioning (KSP2); it is no longer <kotlin>-<ksp>.
 ksp = "2.3.11"
+# QR encoding for worksheet sharing. 3.5.4 verified as the current release against
+# repo1.maven.org/maven2/com/google/zxing/core/maven-metadata.xml on 2026-09-09.
+zxing = "3.5.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -51,6 +54,14 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 # Cost, stated plainly: +30.7 MB of arm64 native (libonnxruntime.so 30.6 + the JNI shim 0.1).
 # abiFilters drops the other three ABIs, so the AAR's 37 MB is not the shipped figure.
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+# QR code generation for sharing a worksheet to a phone, offline.
+#
+# `com.google.zxing:core`, not `zxing-android-embedded`: core is pure Java with no Android
+# dependency, no camera, no Activity and — the part that matters here — no network. It encodes a
+# bit matrix and nothing else; turning that into a Bitmap is ~15 lines we write ourselves.
+# Apache-2.0. A QR encoder is Reed-Solomon plus mask selection, which is precisely the kind of
+# thing not to hand-roll.
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }

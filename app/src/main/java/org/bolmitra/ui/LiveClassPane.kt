@@ -1,0 +1,1226 @@
+package org.bolmitra.ui
+
+import android.os.SystemClock
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import org.bolmitra.phrasebook.Provenance
+import org.bolmitra.translate.AudioPlayer
+import org.bolmitra.translate.DegradeReason
+import org.bolmitra.translate.TurnOutcome
+import org.bolmitra.ui.common.BolMitraIcons
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.bolmitra.phrasebook.DemoSeed
+import org.bolmitra.phrasebook.InMemoryPhrasebook
+import org.bolmitra.speech.AudioCapture
+import org.bolmitra.speech.LiveTurnEngine
+import org.bolmitra.speech.TargetLanguage
+import org.bolmitra.ui.common.ConcentricCircleButton
+import org.bolmitra.ui.common.SoundwaveVisualizer
+
+private const val LISTEN_WINDOW_MS = 4000L
+
+enum class TurnPhase { IDLE, LOADING, LISTENING, THINKING }
+
+data class ChatHistoryItem(
+    val id: String,
+    val hiText: String,
+    val nativeText: String,
+    val time: String,
+    val isToday: Boolean,
+)
+
+/**
+ * Live Class Screen — Exact replica of Image 1.
+ */
+@Composable
+fun LiveClassPane(
+    wide: Boolean,
+    micGranted: Boolean,
+    language: TargetLanguage,
+    onLanguageChange: (TargetLanguage) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val engine = remember(language) { LiveTurnEngine.get(context, language) }
+
+    // phrasesFor(language), NOT phrases. The unfiltered list is Mundari placeholders, so under a
+    // Santali selection it returned Mundari text and played the Mundari clip. LiveTurnEngine fixed
+    // this for its own T0; the pane's copy still had the bug on the play path.
+    val phrasebook = remember(language) { InMemoryPhrasebook(DemoSeed.phrasesFor(language)) }
+
+    var loadState by remember { mutableStateOf(engine.loadState) }
+    var phase by remember { mutableStateOf(TurnPhase.IDLE) }
+    var result by remember { mutableStateOf<LiveTurnEngine.TurnResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var speakingAudio by remember { mutableStateOf(false) }
+
+    var inputTab by remember { mutableStateOf(0) } // 0: Type & Translate, 1: Quick Phrases
+    var typedHindi by remember { mutableStateOf("") }
+    var historyTab by remember { mutableStateOf(0) } // 0: History, 1: Recordings
+    var historySearch by remember { mutableStateOf("") }
+
+    val historyItems = remember {
+        listOf(
+            ChatHistoryItem("1", "किताब खोलो", "Buku kholoko", "10:45 AM", true),
+            ChatHistoryItem("2", "सब लोग बैठ जाओ", "Apeko enda jokeda", "10:42 AM", true),
+            ChatHistoryItem("3", "यह क्या है?", "Ida enej mena?", "10:38 AM", true),
+            ChatHistoryItem("4", "गिनती बोलो", "Ginti ko menkana", "04:12 PM", false),
+            ChatHistoryItem("5", "अपना नाम बताओ", "Nin enej mena", "04:08 PM", false),
+        )
+    }
+
+    LaunchedEffect(engine) {
+        result = null
+        error = null
+        phase = TurnPhase.LOADING
+        loadState = engine.ensureLoaded()
+        phase = TurnPhase.IDLE
+    }
+
+    val canSpeak = micGranted && loadState is LiveTurnEngine.LoadState.Ready
+
+    fun runTurn() {
+        if (!canSpeak || phase != TurnPhase.IDLE) return
+        error = null
+        result = null
+        scope.launch {
+            val capture = AudioCapture()
+            try {
+                phase = TurnPhase.LISTENING
+                withContext(Dispatchers.Default) {
+                    capture.start()
+                    val deadline = SystemClock.elapsedRealtime() + LISTEN_WINDOW_MS
+                    while (SystemClock.elapsedRealtime() < deadline) {
+                        capture.drain()
+                    }
+                }
+                val pcm = capture.stop()
+                val turnStart = SystemClock.elapsedRealtime()
+
+                if (pcm == null) {
+                    error = "Nothing audible was captured. Hold the tablet closer and speak up."
+                    phase = TurnPhase.IDLE
+                    return@launch
+                }
+                phase = TurnPhase.THINKING
+                val turnResult = engine.runTurn(pcm, turnStart)
+                result = turnResult
+            } catch (e: Throwable) {
+                error = e.message ?: e::class.java.simpleName
+                runCatching { capture.stop() }
+            } finally {
+                phase = TurnPhase.IDLE
+            }
+        }
+    }
+
+    /**
+     * Translates typed Hindi through the same ladder speech uses.
+     *
+     * Was a bare `phrasebook.lookup` + `player.play(ref)`, which never touched the translator and
+     * never set [result] — so typed text outside the seeded list produced silence, no on-screen
+     * translation and no provenance chip. Now it runs the orchestrator, so the transcript box
+     * fills for typing exactly as it does for speech.
+     */
+    fun translateTyped(textHi: String) {
+        val hindi = textHi.trim()
+        if (hindi.isEmpty() || phase != TurnPhase.IDLE) return
+        error = null
+        result = null
+        scope.launch {
+            phase = TurnPhase.THINKING
+            speakingAudio = true
+            try {
+                if (engine.ensureLoaded() !is LiveTurnEngine.LoadState.Ready) {
+                    loadState = engine.loadState
+                    return@launch
+                }
+                result = engine.runTextTurn(hindi, SystemClock.elapsedRealtime())
+            } catch (e: Throwable) {
+                error = e.message ?: e::class.java.simpleName
+            } finally {
+                speakingAudio = false
+                phase = TurnPhase.IDLE
+            }
+        }
+    }
+
+    /**
+     * Plays this turn's translation again, for the child who missed it.
+     *
+     * The point of this button is that nothing is recomputed: the teacher does not repeat the
+     * sentence, ASR does not run, T1 does not run, and VITS does not re-synthesise. The audio is
+     * already in [LiveTurnEngine.TurnResult]'s outcome, so this is a buffer write.
+     *
+     * Guarded on [speakingAudio] because `RenderingAudioPlayer.play` blocks until the clip has
+     * finished on purpose — two overlapping calls would be two voices in the room at once.
+     */
+    fun replayTranslation() {
+        val outcome = result?.outcome ?: return
+        if (!outcome.hasReplayableAudio() || speakingAudio || phase != TurnPhase.IDLE) return
+        scope.launch {
+            speakingAudio = true
+            try {
+                val played = withContext(Dispatchers.Default) {
+                    engine.audioPlayer?.replay(outcome) ?: false
+                }
+                if (!played) {
+                    // Never a silent no-op: if the pack asset vanished or the track failed, say so.
+                    error = "Could not play that again — " +
+                        (result?.note ?: "the audio is no longer available")
+                }
+            } finally {
+                speakingAudio = false
+            }
+        }
+    }
+
+    /** Replays a phrase that already has pack audio. Used by the history rows. */
+    fun playPhraseAudio(textHi: String) {
+        scope.launch {
+            val lookup = phrasebook.lookup(textHi)
+            speakingAudio = true
+            withContext(Dispatchers.Default) {
+                when (engine.ensureLoaded()) {
+                    is LiveTurnEngine.LoadState.Ready -> {
+                        val ref = lookup?.phrase?.audioRef
+                        val player = engine.audioPlayer
+                        if (player != null && ref != null) {
+                            player.play(ref)
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            speakingAudio = false
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 1. Top Illustrated Header Banner
+        BannerHeaderCard(
+            icon = BolMitraIcons.Mic,
+            title = "Live Class",
+            subtitleEn = "Speak in Hindi, help every child learn in their language",
+            subtitleHi = "आप बोलिए हिंदी में, बच्चे सुनेंगे उनकी भाषा में",
+            badgeLines = listOf("Different", "Languages", "Brighter", "Futures"),
+        )
+
+        // 2. Target Language Selector
+        LanguageSelectorBar(
+            currentLanguage = language,
+            onSelectLanguage = onLanguageChange,
+            label = "Target Language (Child's Language)",
+            trailingContent = {
+                // Direction dropdown pill
+                Row(
+                    modifier = Modifier
+                        .background(Color.White, RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("⇄", color = Color(0xFF16A34A), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Column {
+                        Text(
+                            "Translate:",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 9.sp,
+                                color = Color(0xFF64748B),
+                            ),
+                        )
+                        Text(
+                            "Hindi → ${language.englishName}",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF1E293B),
+                            ),
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            },
+        )
+
+        // Warnings. Every one of these was previously computed and then never rendered, so a
+        // failed load or a thrown turn left the mic button silently doing nothing.
+        if (!micGranted) {
+            WarningBanner("Microphone permission is not granted. Grant it in Settings > Apps > BolMitra.")
+        }
+
+        when (val ls = loadState) {
+            is LiveTurnEngine.LoadState.Missing -> WarningBanner(ls.detail)
+            is LiveTurnEngine.LoadState.Failed ->
+                WarningBanner("The models on this tablet could not be loaded: ${ls.detail}")
+            is LiveTurnEngine.LoadState.Unsupported -> WarningBanner(ls.detail)
+            else -> Unit
+        }
+
+        // A borrowed voice is a separate admission from unreviewed words, and it belongs on the
+        // screen where the class hears it, not only in Settings.
+        language.voiceNote?.takeIf { loadState is LiveTurnEngine.LoadState.Ready }?.let {
+            WarningBanner(it)
+        }
+
+        error?.let { WarningBanner(it) }
+
+        // 3. Main Center Area: Two Big Voice Cards + Right History Column
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Center Voice & Input Column (Left 65%)
+            Column(
+                modifier = Modifier.weight(1.8f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // Two Voice Cards side-by-side
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Teacher Card (Orange)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            // Top Row: Avatar + Auto-detect
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(36.dp).background(Color(0xFFFED7AA), CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Person,
+                                            contentDescription = null,
+                                            tint = Color(0xFFEA580C),
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            "You (Teacher)",
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = Color(0xFF1E293B),
+                                            ),
+                                        )
+                                        Text(
+                                            "Speak in Hindi",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontSize = 11.5.sp,
+                                                color = Color(0xFF64748B),
+                                            ),
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text("Auto-detect", fontSize = 10.sp, color = Color(0xFF475569))
+                                    Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(12.dp), tint = Color(0xFF475569))
+                                }
+                            }
+
+                            Spacer(Modifier.height(18.dp))
+
+                            // Soundwave + Mic button + Soundwave
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                SoundwaveVisualizer(
+                                    color = Color(0xFFF97316),
+                                    isActive = phase == TurnPhase.LISTENING,
+                                    modifier = Modifier.size(width = 56.dp, height = 36.dp),
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                ConcentricCircleButton(
+                                    icon = BolMitraIcons.Mic,
+                                    primaryColor = Color(0xFFF97316),
+                                    isPulsing = phase == TurnPhase.LISTENING,
+                                    onClick = ::runTurn,
+                                    modifier = Modifier.size(92.dp),
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                SoundwaveVisualizer(
+                                    color = Color(0xFFF97316),
+                                    isActive = phase == TurnPhase.LISTENING,
+                                    modifier = Modifier.size(width = 56.dp, height = 36.dp),
+                                )
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+
+                            Text(
+                                text = when (phase) {
+                                    TurnPhase.LISTENING -> "Listening..."
+                                    TurnPhase.THINKING -> "Translating..."
+                                    else -> "Tap to speak"
+                                },
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF1E293B),
+                                ),
+                            )
+                            Text(
+                                text = "हिंदी में बोलिए",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                ),
+                            )
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Text(
+                                text = "00:00 / 30:00",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF94A3B8),
+                                ),
+                            )
+                        }
+                    }
+
+                    // Student Card (Green)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            // Top Row: Avatar
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(36.dp).background(Color(0xFFBBF7D0), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("👥", fontSize = 16.sp)
+                                }
+                                Column {
+                                    Text(
+                                        "Students (Class)",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF1E293B),
+                                        ),
+                                    )
+                                    Text(
+                                        "Hearing in ${language.englishName}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 11.5.sp,
+                                            color = Color(0xFF64748B),
+                                        ),
+                                    )
+                                }
+                            }
+
+                            Spacer(Modifier.height(18.dp))
+
+                            // Soundwave + Speaker button + Soundwave
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                SoundwaveVisualizer(
+                                    color = Color(0xFF2EAF3B),
+                                    isActive = speakingAudio,
+                                    modifier = Modifier.size(width = 56.dp, height = 36.dp),
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                ConcentricCircleButton(
+                                    icon = Icons.Filled.PlayArrow,
+                                    primaryColor = Color(0xFF2EAF3B),
+                                    isPulsing = speakingAudio,
+                                    // Replays THIS turn's audio. Was a phrasebook lookup on the
+                                    // Hindi transcript, which found nothing for a T1 translation
+                                    // and played nothing at all.
+                                    onClick = { replayTranslation() },
+                                    modifier = Modifier.size(92.dp),
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                SoundwaveVisualizer(
+                                    color = Color(0xFF2EAF3B),
+                                    isActive = speakingAudio,
+                                    modifier = Modifier.size(width = 56.dp, height = 36.dp),
+                                )
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+
+                            val outcomeText = result?.outcome?.displayText()
+                                ?: "Translation will play here"
+
+                            Text(
+                                text = outcomeText,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Color(0xFF1E293B),
+                                ),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "अनुवाद यहाँ सुनाया जाएगा",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                ),
+                            )
+
+                            result?.outcome?.provenance?.let { prov ->
+                                Spacer(Modifier.height(6.dp))
+                                ProvenanceChip(prov)
+                            }
+                        }
+                    }
+                }
+
+                // Heard (Hindi) | Translated (target) — the two-part transcript box
+                HeardAndTranslatedBox(
+                    result = result,
+                    phase = phase,
+                    language = language,
+                    speaking = speakingAudio,
+                    onReplay = { replayTranslation() },
+                )
+
+                // Input Panel: Type & Translate / Quick Phrases
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        // Tabs row: Type & Translate | Quick Phrases
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Column(
+                                    modifier = Modifier.clickable { inputTab = 0 },
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("⌨ ", fontSize = 13.sp)
+                                        Text(
+                                            "Type & Translate",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = if (inputTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (inputTab == 0) Color(0xFF1E293B) else Color(0xFF64748B),
+                                            ),
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    if (inputTab == 0) {
+                                        Box(Modifier.width(115.dp).height(2.5.dp).background(Color(0xFF2EAF3B), RoundedCornerShape(2.dp)))
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier.clickable { inputTab = 1 },
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("💬 ", fontSize = 13.sp)
+                                        Text(
+                                            "Quick Phrases",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = if (inputTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (inputTab == 1) Color(0xFF1E293B) else Color(0xFF64748B),
+                                            ),
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    if (inputTab == 1) {
+                                        Box(Modifier.width(95.dp).height(2.5.dp).background(Color(0xFF2EAF3B), RoundedCornerShape(2.dp)))
+                                    }
+                                }
+                            }
+
+                            // Clear button
+                            Row(
+                                modifier = Modifier.clickable { typedHindi = "" },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(Icons.Filled.Clear, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(14.dp))
+                                Text("Clear", fontSize = 11.sp, color = Color(0xFF64748B))
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        // Text input field with Translate button
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFAFAFA), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = typedHindi,
+                                    onValueChange = { if (it.length <= 500) typedHindi = it },
+                                    placeholder = { Text("Type in Hindi...", color = Color(0xFF94A3B8), fontSize = 14.sp) },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                    ),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        "${typedHindi.length}/500",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, color = Color(0xFF94A3B8)),
+                                    )
+
+                                    Button(
+                                        onClick = { translateTyped(typedHindi) },
+                                        enabled = typedHindi.isNotBlank() && phase == TurnPhase.IDLE,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EAF3B)),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, Modifier.size(14.dp), tint = Color.White)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Translate", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        // Try these quick phrase suggestions
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                "Try these:",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.5.sp,
+                                    color = Color(0xFF475569),
+                                ),
+                            )
+                            listOf("सुनो ध्यान से", "दोहराओ", "बहुत अच्छा", "फिर से बोलो", "अब लिखो").forEach { phrase ->
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
+                                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                                        .clickable {
+                                            typedHindi = phrase
+                                            translateTyped(phrase)
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                ) {
+                                    Text(phrase, fontSize = 11.sp, color = Color(0xFF1E293B))
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(Color(0xFFF1F5F9), CircleShape)
+                                    .clickable { /* add quick phrase */ },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("+", fontSize = 14.sp, color = Color(0xFF475569))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Right Column: History / Recordings (Width ~35%)
+            Box(
+                modifier = Modifier
+                    .weight(1.0f)
+                    .fillMaxHeight()
+                    .background(Color.White, RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                    .padding(14.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // History / Recordings Tab
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        Column(
+                            modifier = Modifier.clickable { historyTab = 0 },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("📋 ", fontSize = 13.sp)
+                                Text(
+                                    "History",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (historyTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (historyTab == 0) Color(0xFF1E293B) else Color(0xFF64748B),
+                                    ),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            if (historyTab == 0) {
+                                Box(Modifier.width(60.dp).height(2.5.dp).background(Color(0xFF2EAF3B), RoundedCornerShape(2.dp)))
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier.clickable { historyTab = 1 },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🎙 ", fontSize = 13.sp)
+                                Text(
+                                    "Recordings",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (historyTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (historyTab == 1) Color(0xFF1E293B) else Color(0xFF64748B),
+                                    ),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            if (historyTab == 1) {
+                                Box(Modifier.width(75.dp).height(2.5.dp).background(Color(0xFF2EAF3B), RoundedCornerShape(2.dp)))
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Search input
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Search, contentDescription = null, tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Search previous chats...",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, color = Color(0xFF94A3B8)),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // History list
+                    LazyColumn(
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item {
+                            Text(
+                                "Today",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF64748B)),
+                            )
+                        }
+                        items(historyItems.filter { it.isToday }) { item ->
+                            HistoryRow(item, onPlay = { playPhraseAudio(item.hiText) })
+                        }
+
+                        item {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Yesterday",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF64748B)),
+                            )
+                        }
+                        items(historyItems.filter { !it.isToday }) { item ->
+                            HistoryRow(item, onPlay = { playPhraseAudio(item.hiText) })
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // View all history button
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White, RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(10.dp))
+                            .clickable { /* view history */ }
+                            .padding(vertical = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "View all history →",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF1E293B)),
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Bottom Footer Bar
+        FooterTipBar(
+            tipText = "Keep your sentences short and simple for better translation.",
+            actionText = "Aligned with NIPUN Bharat FLN outcomes →",
+        )
+    }
+}
+
+/**
+ * The single place that turns a [TurnOutcome] into the string to show.
+ *
+ * Lifted out of the student card so the card and the transcript box cannot drift apart when a
+ * branch is added to [TurnOutcome]. Note which field each branch carries: `MachineAudio` holds the
+ * NATIVE script (Ol Chiki for Santali — what the class sees), while `TextOnly` holds Devanagari,
+ * because on that rung the teacher reads it aloud themselves.
+ */
+private fun TurnOutcome.displayText(): String = when (this) {
+    is TurnOutcome.VerifiedAudio -> targetText
+    is TurnOutcome.ApproximateAudio -> targetText
+    is TurnOutcome.MachineAudio -> targetText
+    is TurnOutcome.TextOnly -> devanagariText
+    is TurnOutcome.Unavailable -> reason.explain()
+}
+
+/**
+ * True when this turn left behind audio that can be played again with no model work.
+ *
+ * `MachineAudio` still holds its PCM, and `RenderingAudioPlayer` caches a rendered pack ref, so
+ * replaying either costs nothing — no ASR, no translation, no synthesis. The two false branches are
+ * the rungs that by definition produced no audio: on `TextOnly` the teacher reads the Devanagari
+ * aloud themselves, and `Unavailable` never got that far.
+ */
+private fun TurnOutcome.hasReplayableAudio(): Boolean = when (this) {
+    is TurnOutcome.VerifiedAudio,
+    is TurnOutcome.ApproximateAudio,
+    is TurnOutcome.MachineAudio,
+    -> true
+
+    is TurnOutcome.TextOnly,
+    is TurnOutcome.Unavailable,
+    -> false
+}
+
+/**
+ * Plays the audio this turn already produced.
+ *
+ * Deliberately re-uses the outcome rather than the Hindi transcript. The student card's play button
+ * used to look the transcript up in the phrasebook, which meant a T1 machine translation — the
+ * common case for Santali — found no entry and played nothing, silently.
+ */
+private fun AudioPlayer.replay(outcome: TurnOutcome): Boolean = when (outcome) {
+    is TurnOutcome.VerifiedAudio -> play(outcome.audioRef)
+    is TurnOutcome.ApproximateAudio -> play(outcome.audioRef)
+    is TurnOutcome.MachineAudio -> play(outcome.clip)
+    is TurnOutcome.TextOnly, is TurnOutcome.Unavailable -> false
+}
+
+/**
+ * A named reason, never a bare "failed".
+ *
+ * "No translation available" told the teacher nothing actionable. Each rung has a different fix —
+ * speak louder, sideload a pack, shorten the sentence — and the whole point of [DegradeReason] is
+ * that the outcome knows which.
+ */
+private fun DegradeReason.explain(): String = when (this) {
+    DegradeReason.NO_SPEECH_RECOGNISED -> "Nothing was recognised — speak a little louder"
+    DegradeReason.NO_TRANSLATION_AVAILABLE -> "No translation model for this language on this tablet"
+    DegradeReason.BUDGET_EXHAUSTED -> "Took too long — try a shorter sentence"
+    DegradeReason.SYNTHESIS_FAILED -> "Translated, but the voice could not speak it"
+    DegradeReason.AUDIO_ASSET_MISSING -> "Verified phrase found, but its audio is missing"
+}
+
+/**
+ * Heard-vs-translated box: the Hindi the recogniser produced on the left, the target text on the
+ * right.
+ *
+ * Deliberately full width rather than tucked into the student card, which ellipsises at two lines.
+ * Ol Chiki runs long and this is the one place the teacher can check what the class is actually
+ * being shown.
+ *
+ * Both halves populate at the same instant. The batch recogniser emits no partials, so there is no
+ * progressive fill to design for — during a turn both sides show the same pending state.
+ */
+@Composable
+private fun HeardAndTranslatedBox(
+    result: LiveTurnEngine.TurnResult?,
+    phase: TurnPhase,
+    language: TargetLanguage,
+    speaking: Boolean,
+    onReplay: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pending = phase == TurnPhase.LISTENING || phase == TurnPhase.THINKING
+
+    val heard = when {
+        phase == TurnPhase.LISTENING -> "Listening…"
+        phase == TurnPhase.THINKING -> "Working it out…"
+        else -> result?.transcript?.takeIf { it.isNotBlank() }
+    }
+    val translated = when {
+        pending -> null
+        else -> result?.outcome?.displayText()
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.White, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+            .padding(16.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "What the tablet heard, and what it will say",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = Color(0xFF334155),
+                    ),
+                )
+                // Timings are only meaningful once a turn has actually run.
+                result?.takeIf { !pending }?.let { res ->
+                    Text(
+                        if (res.typed) "typed · ${res.totalMs} ms"
+                        else "heard ${res.asrMs} ms · total ${res.totalMs} ms",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8),
+                        ),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TranscriptHalf(
+                    modifier = Modifier.weight(1f),
+                    accent = Color(0xFFF97316),
+                    heading = "Heard · Hindi",
+                    body = heard,
+                    placeholder = "Speak or type, and the Hindi appears here",
+                )
+
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .height(72.dp)
+                        .background(Color(0xFFE2E8F0)),
+                )
+
+                TranscriptHalf(
+                    modifier = Modifier.weight(1f),
+                    accent = Color(0xFF2EAF3B),
+                    heading = "Translated · ${language.englishName}",
+                    body = translated,
+                    placeholder = "The ${language.englishName} text appears here",
+                    // ASR output carries no provenance — it is not translated content. Only the
+                    // right half gets a chip.
+                    provenance = result?.outcome?.provenance?.takeIf { !pending },
+                )
+            }
+
+            // Replay. Shown only once a turn has produced audio, because a button that cannot do
+            // anything is worse than no button in front of a class.
+            val outcome = result?.outcome
+            if (!pending && outcome != null) {
+                Spacer(Modifier.height(12.dp))
+                if (outcome.hasReplayableAudio()) {
+                    ReplayButton(speaking = speaking, onClick = onReplay)
+                } else {
+                    // The TextOnly rung on purpose has no audio: the teacher reads it aloud. Say
+                    // that, rather than offering a dead button.
+                    Text(
+                        "No audio for this one — read the text above aloud to the class",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 13.sp,
+                            color = Color(0xFF94A3B8),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * "Play again" — replays the audio this turn already made.
+ *
+ * Sized past [minTouchTarget] because it gets pressed mid-lesson, often in a hurry, and it is the
+ * one control a teacher reaches for when a child at the back says they did not catch it.
+ */
+@Composable
+private fun ReplayButton(speaking: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .background(
+                if (speaking) Color(0xFFDCFCE7) else Color(0xFF2EAF3B),
+                RoundedCornerShape(12.dp),
+            )
+            .border(
+                1.dp,
+                if (speaking) Color(0xFF86EFAC) else Color(0xFF259B32),
+                RoundedCornerShape(12.dp),
+            )
+            .clickable(enabled = !speaking, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Core icon set only — material-icons-extended is not a dependency and pulling it in for
+        // two glyphs is not worth the APK.
+        Icon(
+            imageVector = if (speaking) Icons.Filled.PlayArrow else Icons.Filled.Refresh,
+            contentDescription = if (speaking) "Playing the translation" else "Play the translation again",
+            tint = if (speaking) Color(0xFF16A34A) else Color.White,
+            modifier = Modifier.size(20.dp),
+        )
+        Column {
+            Text(
+                if (speaking) "Playing…" else "Play again",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = if (speaking) Color(0xFF16A34A) else Color.White,
+                ),
+            )
+            Text(
+                "फिर से सुनाओ",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 12.sp,
+                    color = if (speaking) Color(0xFF16A34A) else Color(0xFFDCFCE7),
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TranscriptHalf(
+    accent: Color,
+    heading: String,
+    body: String?,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    provenance: Provenance? = null,
+) {
+    Column(modifier = modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.size(8.dp).background(accent, CircleShape))
+            Text(
+                heading,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    color = Color(0xFF64748B),
+                ),
+            )
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        Text(
+            text = body ?: placeholder,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                // 16 sp floor: this is the one box on the screen a teacher has to actually read.
+                fontSize = 16.sp,
+                fontWeight = if (body != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (body != null) Color(0xFF1E293B) else Color(0xFF94A3B8),
+            ),
+            // No maxLines. The student card already ellipsises at two, and being able to read the
+            // whole line is the reason this box exists.
+        )
+
+        provenance?.let {
+            Spacer(Modifier.height(8.dp))
+            ProvenanceChip(it)
+        }
+    }
+}
+
+@Composable
+private fun HistoryRow(item: ChatHistoryItem, onPlay: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(Color(0xFFDCFCE7), CircleShape)
+                    .clickable(onClick = onPlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    tint = Color(0xFF16A34A),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+
+            Column {
+                Text(
+                    item.hiText,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.5.sp,
+                        color = Color(0xFF1E293B),
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    item.nativeText,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B),
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Text(
+            item.time,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, color = Color(0xFF94A3B8)),
+        )
+    }
+}

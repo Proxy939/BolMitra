@@ -57,3 +57,6 @@ ui.xml
 # fetchSherpaOnnxAar task, not committed. See ARCHITECTURE.md §5.2 Resolution 0.
 app/libs/*.aar
 tools/aar-check/
+
+# Research scratchpad. Working notes with unverified claims in progress, not a deliverable.
+latest research.md

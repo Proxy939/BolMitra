@@ -178,6 +178,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
 
+    // Offline QR encoding for worksheet sharing. See the note in libs.versions.toml.
+    implementation(libs.zxing.core)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
