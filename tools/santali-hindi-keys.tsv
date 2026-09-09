@@ -504,3 +504,33 @@ thanks	शुक्रिया
 # read aloud. The builder repairs ASCII periods to U+1C79; there is no equivalent rule for ?,
 # and choosing one is a decision about Ol Chiki punctuation (U+1C7E MUCAAD and friends) that
 # should be made deliberately rather than to unblock one key. Left unreachable on purpose.
+# --- High-frequency classroom words -------------------------------------------------------
+# Added after measuring word-level reach: of 40 words a teacher uses constantly, 16 were
+# unreachable from Hindi while most of them were already sitting in the corpus with real Santali
+# and an empty Hindi column. Same fix as the greetings, same reason it is safe: only the Hindi
+# lookup key is authored here, every target string stays verbatim corpus text at CORPUS.
+#
+# बच्चों is the one that prompted this. नमस्ते बच्चों returned machine output while नमस्ते
+# alone was a clean corpus hit, and GATITOS had children -> ᱜᱤᱫᱽᱨᱟ all along.
+#
+# NOT keyed, deliberately: what / who / where / how many. Their corpus targets end in an ASCII
+# question mark, which the ingest gate rejects for a Hindi-reachable row because the voice would
+# read it aloud. Same standing decision as How are you. above.
+all	सब
+all	सभी
+everyone	सब लोग
+children	बच्चों
+children	बच्चे
+boy	लड़का
+girl	लड़की
+here	यहाँ
+there	वहाँ
+and	और
+now	अभी
+very	बहुत
+more	ज़्यादा
+slowly	धीरे
+fast	जल्दी
+# kami is work; करो is the imperative a teacher says. srcEn carries do so a reviewer sees
+# exactly what the corpus translated.
+do	करो

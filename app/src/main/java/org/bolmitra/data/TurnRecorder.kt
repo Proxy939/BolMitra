@@ -205,6 +205,7 @@ private fun TurnOutcome.spokenClip(): AudioClip? = when (this) {
     is TurnOutcome.CorpusAudio -> clip
     is TurnOutcome.ApproximateAudio -> clip
     is TurnOutcome.MachineAudio -> clip
+    is TurnOutcome.ComposedAudio -> clip
     is TurnOutcome.TextOnly -> null
     is TurnOutcome.Unavailable -> null
 }
@@ -215,6 +216,7 @@ private fun TurnOutcome.nativeText(): String = when (this) {
     is TurnOutcome.CorpusAudio -> targetText
     is TurnOutcome.ApproximateAudio -> targetText
     is TurnOutcome.MachineAudio -> targetText
+    is TurnOutcome.ComposedAudio -> targetText
     // Devanagari, which the teacher reads aloud themselves on this rung. Recorded in both columns
     // so a history row is never blank where something was actually shown.
     is TurnOutcome.TextOnly -> devanagariText

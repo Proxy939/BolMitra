@@ -1,6 +1,8 @@
 package org.bolmitra.translate
 
 import org.bolmitra.phrasebook.Provenance
+import org.bolmitra.phrasebook.WordComposer
+import org.bolmitra.translit.OlChikiNormalizer
 
 /**
  * One classroom turn: teacher speaks Hindi, students hear Mundari — ARCHITECTURE.md §6.2.
@@ -97,6 +99,32 @@ sealed interface TurnOutcome {
     }
 
     /**
+     * Between the phrasebook and the model: every word from a corpus row, in Hindi word order.
+     *
+     * Exists because T0 matches whole phrases and a sentence one word longer than an entry fell all
+     * the way to the model. `नमस्ते बच्चों` did exactly that while the corpus held both words.
+     *
+     * Carries `APPROXIMATE`, and the choice is deliberate. It is not `CORPUS`, because a corpus never
+     * published this string — only its words. It is not `MACHINE`, because no model was involved and
+     * every word is traceable to a citable row. `APPROXIMATE` is the existing level that means
+     * "usable, and the teacher should judge", which is exactly the claim: **real Santali words,
+     * without the grammar a speaker would add.** [coverage] and [missing] are carried so the screen
+     * can say how complete it is rather than implying it is a finished sentence.
+     */
+    data class ComposedAudio(
+        val targetText: String,
+        val clip: AudioClip,
+        /** Share of non-grammatical words that resolved, 0..1. */
+        val coverage: Float,
+        /** Hindi words nothing was found for. Shown, never silently dropped. */
+        val missing: List<String>,
+        /** Corpora the words came from. */
+        val sources: List<String>,
+    ) : TurnOutcome {
+        override val provenance = Provenance.APPROXIMATE
+    }
+
+    /**
      * Degraded rung. We have text but no audio — either synthesis failed or the budget would
      * not cover it. The teacher reads the Devanagari aloud themselves, which keeps the lesson
      * moving. This is the rung that makes the ≤3 s promise honest rather than aspirational.
@@ -140,6 +168,14 @@ class TurnOrchestrator(
     private val player: AudioPlayer,
     /** Null until Phase 3. T0 alone satisfies every requirement without it (§4.5). */
     private val mt: MtEngine? = null,
+    /**
+     * Word-by-word composition from corpus rows, tried between T0 and T1.
+     *
+     * A lambda rather than a dependency so the orchestrator stays free of the phrasebook's asset
+     * loading and its tests stay pure. Null disables the rung entirely, which is what Mundari and Ho
+     * get — they have no corpus to compose from.
+     */
+    private val composeWords: ((String) -> WordComposer.Composition?)? = null,
     private val deadlineMs: Long = LatencyBudget.DEADLINE_MS,
     private val nowMs: () -> Long,
 ) {
@@ -222,7 +258,34 @@ class TurnOrchestrator(
             }
         }
 
-        // T0 miss. Path B is only attempted if an engine exists AND the budget can cover it.
+        // T0 missed as a whole phrase. Before reaching for the model, try composing the sentence
+        // from corpus rows word by word.
+        //
+        // This rung exists because the phrasebook matches whole phrases, so a sentence one word
+        // longer than an entry fell all the way to T1 — `नमस्ते बच्चों` did, while the corpus held
+        // both `नमस्ते` and `children`. Measured across fifteen plausible classroom sentences, only
+        // 4 matched whole while most of their content words were present.
+        //
+        // It is tried FIRST because words a reviewer can trace beat model output nobody has seen,
+        // even when the word order is wrong. It is also nearly free: map lookups against rows
+        // already in memory, no session, no tensors.
+        composeWords?.invoke(transcript)?.let { composed ->
+            val clip = tts.synthesizeUtterance(composed.devanagari)
+            if (clip != null && player.play(clip)) {
+                return TurnOutcome.ComposedAudio(
+                    targetText = composed.native,
+                    clip = clip,
+                    coverage = composed.coverage,
+                    missing = composed.missing,
+                    sources = composed.sources,
+                )
+            }
+            // Synthesis or playback failed. Fall through to T1 rather than returning text-only:
+            // the model may still produce something speakable, and this rung is an improvement on
+            // T1 rather than a replacement for it.
+        }
+
+        // Path B is only attempted if an engine exists AND the budget can cover it.
         val engine = mt
             ?: return TurnOutcome.Unavailable(DegradeReason.NO_TRANSLATION_AVAILABLE)
 
@@ -232,6 +295,19 @@ class TurnOrchestrator(
 
         val translated = engine.translate(transcript)
             ?: return TurnOutcome.Unavailable(DegradeReason.NO_TRANSLATION_AVAILABLE)
+
+        // Model output is checked before it is allowed near a screen or a voice.
+        //
+        // It was not, and that is what the reported broken glyphs were: `MachineAudio` was returned
+        // with whatever the decoder emitted. A greedy int8 model on a low-resource pair can produce
+        // strings with no Ol Chiki in them at all, or stray marks that render as boxes — and a class
+        // shown boxes cannot tell a wrong translation from a broken font.
+        //
+        // `OlChikiNormalizer.rejectionReason` already encoded this judgement for corpus ingest; the
+        // model deserves the same bar, not a lower one.
+        OlChikiNormalizer.rejectionReason(translated.targetTextNative)?.let {
+            return TurnOutcome.Unavailable(DegradeReason.NO_TRANSLATION_AVAILABLE)
+        }
 
         // Re-check before synthesis: translation may itself have overrun its estimate, and
         // that is exactly when a naive implementation commits to another 600 ms it cannot pay.

@@ -227,7 +227,7 @@ alert		ᱟᱛᱮᱱ	GATITOS	word
 Aleut		ᱟᱞᱮᱩᱴ	Hembram/Glossary	word			
 Algerian Arabic		ᱟᱞᱡᱮᱨᱤᱭᱟᱹᱱ ᱟᱹᱨᱮᱵᱤᱠ	Hembram/Glossary	word			
 alive		ᱵᱟᱱᱪᱟᱳ	GATITOS	word			
-all		ᱡᱚᱛᱚ	GATITOS	word			
+all	सब;सभी	ᱡᱚᱛᱚ	GATITOS	word			
 all right		ᱵᱮᱥ ᱜᱮᱭᱟ	GATITOS	word			
 all the best		ᱱᱟᱯᱟᱭ ᱥᱳᱢ ᱢᱮ	GATITOS	word			
 allow		ᱟᱝᱜᱚᱡ	GATITOS	word			ᱵᱟᱛᱟᱣ|GATITOS
@@ -264,7 +264,7 @@ anchor		ᱟᱝᱠᱚᱨ	GATITOS	word
 ancient		ᱥᱮᱫᱟᱹᱭ	GATITOS	word		repaired:1	ᱫᱷᱟᱠᱟ|GATITOS
 Ancient Egyptian		ᱥᱮᱫᱟᱭ ᱤᱡᱤᱯᱴᱤᱭᱟᱹᱱ	Hembram/Glossary	word			
 Ancient Greek		ᱥᱮᱫᱟᱭ ᱜᱽᱨᱤᱠ	Hembram/Glossary	word			
-and		ᱟᱨ	Hembram/Glossary	word			
+and	और	ᱟᱨ	Hembram/Glossary	word			
 and you		ᱟᱨ ᱟᱢ	GATITOS	word			
 angel		ᱵᱚᱝᱜᱟ ᱠᱩᱨᱤ	GATITOS	word			
 anger		ᱚ	Hembram/Glossary	word			ᱨᱟᱜᱟᱛ|GATITOS
@@ -622,7 +622,7 @@ boundaries		ᱥᱤᱢᱟᱹ	GATITOS	word
 bow		ᱚᱝᱜᱳᱛ	GATITOS	word			
 bowl		ᱵᱟᱴᱤ	GATITOS	word			
 box		ᱵᱟᱠᱥᱚ	GATITOS	word			
-boy		ᱠᱚᱲᱟ ᱜᱤᱫᱽᱲᱟᱹ	GATITOS	word			
+boy	लड़का	ᱠᱚᱲᱟ ᱜᱤᱫᱽᱲᱟᱹ	GATITOS	word			
 boyfriend		ᱫᱩᱞᱚᱨᱤᱭᱟ	GATITOS	word			
 bracelet		ᱛᱤᱨᱮ ᱦᱨᱚᱜᱹ	GATITOS	word			
 Brahmi		ᱵᱽᱨᱟᱦᱢᱦᱤ	Hembram/Glossary	word			
@@ -826,7 +826,7 @@ chief		ᱜᱚᱢᱠᱮ	GATITOS	word
 Chiga		ᱪᱷᱤᱜᱟ	Hembram/Glossary	word			
 child	बच्चा	ᱜᱤᱫᱽᱨᱟᱹ	GATITOS	word		repaired:1	
 childhood		ᱜᱤᱫᱨᱳᱵᱮᱲᱟ	GATITOS	word			
-children		ᱜᱤᱫᱨᱚ	GATITOS	word			
+children	बच्चों;बच्चे	ᱜᱤᱫᱨᱚ	GATITOS	word			
 chill		ᱨᱮᱭᱟᱲ	GATITOS	word			
 Chilli	मिर्च	ᱢᱟᱹᱨᱤᱪ	Hembram/Category	word	vegetable	repaired:1	
 Chimborazo Highland Quichua		ᱪᱷᱤᱢᱵᱚᱨᱟᱡᱚ ᱦᱟᱭᱞᱮᱸᱱᱰ ᱠᱣᱤᱪᱷᱩᱣᱟ	Hembram/Glossary	word			
@@ -1309,7 +1309,7 @@ divide		ᱵᱷᱟᱜ	GATITOS	word
 divine		ᱥᱚᱨᱚᱠᱹ	GATITOS	word			
 divorce		ᱵᱟᱯᱞᱟ	GATITOS	word			ᱵᱟᱯᱞᱟᱹᱫᱚ|GATITOS
 dizzy		ᱛᱚᱸᱜᱮ	GATITOS	word			
-do		ᱠᱟᱢᱤ	GATITOS	word			
+do	करो	ᱠᱟᱢᱤ	GATITOS	word			
 do you		ᱟᱢ ᱫᱚ	GATITOS	word			
 do you love me		ᱟᱢ ᱤᱧ ᱤᱱᱧᱮᱢ ᱫᱩᱞᱟᱨᱤᱧᱟ	GATITOS	word			
 doctor		ᱫᱟᱠᱛᱟᱨ	GATITOS	word			
@@ -1526,7 +1526,7 @@ eventually		ᱢᱩᱪᱮᱫ ᱨᱮ	GATITOS	word
 ever		ᱛᱤᱥ ᱦᱚᱸ	GATITOS	word			
 every		ᱡᱦᱚᱛ	GATITOS	word			
 everybody		ᱡᱚᱛᱚ ᱷᱚᱲ	GATITOS	word			
-everyone		ᱡᱚᱛᱚ ᱦᱚᱲ	GATITOS	word			
+everyone	सब लोग	ᱡᱚᱛᱚ ᱦᱚᱲ	GATITOS	word			
 everything		ᱡᱚᱛᱚ	GATITOS	word			
 evidence		ᱯᱨᱢᱟᱱ	GATITOS	word			
 evil		ᱥᱚᱭᱛᱟᱱ	GATITOS	word			
@@ -1639,7 +1639,7 @@ farmer		ᱪᱟᱥᱤ	GATITOS	word
 Faroese		ᱯᱷᱟᱨᱚᱤᱥ	Hembram/Glossary	word			
 fascinating		ᱯᱷᱮᱥᱤᱱᱮᱴᱤᱝ	GATITOS	word			
 fashion		ᱥᱟᱡᱟᱳᱱ	GATITOS	word			
-fast		ᱯᱷᱩᱨᱛᱤ	GATITOS	word			
+fast	जल्दी	ᱯᱷᱩᱨᱛᱤ	GATITOS	word			
 fat		ᱢᱚᱴᱟ	GATITOS	word			
 fatal		ᱜᱩᱡᱩᱟᱱ	GATITOS	word			
 fate		ᱵᱷᱟᱜ	GATITOS	word			
@@ -1904,7 +1904,7 @@ gift		ᱜᱤᱯᱷᱴ	GATITOS	word
 Gilaki		ᱜᱤᱞᱟᱠᱤ	Hembram/Glossary	word			
 Gilbertese		ᱜᱤᱞᱵᱟᱹᱨᱴᱤᱡᱽ	Hembram/Glossary	word			
 Ginger	अदरक	ᱚᱫᱟ	Hembram/Category	word	vegetable		ᱟᱫᱹᱟ|GATITOS
-girl		ᱠᱩᱲᱤ	GATITOS	word			
+girl	लड़की	ᱠᱩᱲᱤ	GATITOS	word			
 girlfriend		ᱡᱩᱨᱤ ᱯᱟᱨᱤ	GATITOS	word			
 give		ᱮᱢ	GATITOS	word			
 give up		ᱟᱲᱟᱹ	GATITOS	word			
@@ -2114,7 +2114,7 @@ Hen	मुर्गी	ᱥᱤᱢ ᱮᱸᱜᱟ	Hembram/Category	word	bird
 hence		ᱚᱱᱟ ᱤᱭᱮᱛᱮ	GATITOS	word			
 Her		ᱟᱡᱟᱜ	Hembram/Glossary	word		synonyms:2	ᱟᱹᱡᱤᱡ|Hembram/Glossary;ᱩᱱᱤ|GATITOS
 herd		ᱡᱟᱹᱛᱤ	GATITOS	word			
-Here		ᱱᱚᱰᱮ	Hembram/Glossary	word			ᱱᱚᱱᱰᱮ|GATITOS
+Here	यहाँ	ᱱᱚᱰᱮ	Hembram/Glossary	word			ᱱᱚᱱᱰᱮ|GATITOS
 Herero		ᱦᱮᱨᱮᱨᱚ	Hembram/Glossary	word			
 heritage		ᱥᱟᱶᱛᱟᱨᱤ ᱱᱟᱜᱟᱢ	GATITOS	word			
 Herself		ᱩᱱᱤ ᱜᱮ	Hembram/Glossary	word		repaired:1,synonyms:2	ᱠᱩᱹ|Hembram/Glossary
@@ -2969,7 +2969,7 @@ mood		ᱵᱷᱟᱣ	GATITOS	word			ᱢᱚᱱᱮ|GATITOS
 moody		ᱜᱚᱨᱚᱡ	GATITOS	word			
 Moon		ᱢᱩᱱ	Hembram/Glossary	word			ᱪᱟᱹᱫᱳ|GATITOS
 moral		ᱱᱤᱛᱤ	GATITOS	word			
-more		ᱵᱟᱲᱛᱤ	GATITOS	word			
+more	ज़्यादा	ᱵᱟᱲᱛᱤ	GATITOS	word			
 moreover		ᱱᱚᱭᱟᱠᱷᱱᱵᱮᱥᱤ	GATITOS	word			
 Morisyen		ᱢᱚᱨᱤᱥᱭᱮᱱ	Hembram/Glossary	word			
 morning		ᱥᱮᱛᱟᱜ	GATITOS	word			
@@ -3150,7 +3150,7 @@ nouns		ᱧᱩᱛᱩᱢ-ᱟᱱᱟ	GATITOS	word		hyphen:1
 novel		ᱯᱛᱵ	GATITOS	word			
 November	नवंबर	ᱱᱚᱵᱷᱮᱢᱵᱚᱨ	Hembram/Category	word	calendar		ᱱᱚᱵᱷᱮᱢᱵᱨ ᱪᱟᱹᱱᱫᱚ|GATITOS
 Novial		ᱱᱚᱣᱤᱭᱟᱞ	Hembram/Glossary	word			
-Now		ᱱᱤᱛᱚᱜ	Hembram/Glossary	word			ᱧᱤᱛ|GATITOS
+Now	अभी	ᱱᱤᱛᱚᱜ	Hembram/Glossary	word			ᱧᱤᱛ|GATITOS
 nowadays		ᱱᱤᱭᱟᱫᱤᱱ ᱠᱚ	GATITOS	word			
 Nuer		ᱱᱩᱮᱨ	Hembram/Glossary	word			
 nuisance		ᱱᱩᱥᱮᱥᱟᱱ	GATITOS	word			
@@ -4153,7 +4153,7 @@ slot		ᱡᱟᱭᱜᱟ	GATITOS	word
 Slovak		ᱥᱞᱚᱣᱟᱠ	Hembram/Glossary	word			
 Slovenian		ᱥᱞᱚᱣᱮᱱᱤᱭᱟᱱ	Hembram/Glossary	word			
 slow		ᱛᱜᱤᱨ	GATITOS	word			
-slowly		ᱵᱤᱭ ᱵᱤᱭ ᱛᱮ	GATITOS	word		longer-than-source	
+slowly	धीरे	ᱵᱤᱭ ᱵᱤᱭ ᱛᱮ	GATITOS	word		longer-than-source	
 small	छोटा	ᱦᱩᱰᱤᱧ	GATITOS	word			
 Small leguminous plant		ᱚᱛ ᱢᱩᱨᱩᱫ	Hembram/Glossary	word			
 smart		ᱪᱟᱛᱩᱨ	GATITOS	word			
@@ -4555,7 +4555,7 @@ theme		ᱛᱷᱤᱢ	GATITOS	word
 Themselves		ᱩᱱᱠᱩ ᱜᱮ	Hembram/Glossary	word			ᱩᱱᱠᱩ ᱨᱮ|GATITOS
 then		ᱚᱱᱟ ᱛᱟᱭᱱᱚᱢ	GATITOS	word			
 theory		ᱛᱚᱨᱡᱚᱢᱟ	GATITOS	word			
-There		ᱦᱟᱸᱰᱮ	Hembram/Glossary	word			ᱚᱱᱰᱮ|GATITOS
+There	वहाँ	ᱦᱟᱸᱰᱮ	Hembram/Glossary	word			ᱚᱱᱰᱮ|GATITOS
 there are		ᱩᱱᱠᱩ ᱫᱚ	GATITOS	word			
 there is		ᱚᱱᱟ ᱫᱚ ᱠᱟᱱᱟ	GATITOS	word			
 There is a big rock in the middle of the river.		ᱜᱟᱰᱟ ᱛᱟᱞᱟ ᱨᱮ ᱢᱟᱨᱟᱝ ᱫᱷᱤᱨᱤ ᱢᱮᱱᱟᱜᱼᱟ ᱾	Hembram/Sentences	sentence			
@@ -4857,7 +4857,7 @@ verify		ᱡᱟᱪᱟᱭ	GATITOS	word
 versatile		ᱟᱰᱤᱭᱟᱱ	GATITOS	word			
 version		ᱵᱤᱵᱷᱟᱜ	GATITOS	word			
 vertical		ᱵᱷᱟᱨᱴᱤᱠᱞ	GATITOS	word			
-very		ᱟᱰᱤ	GATITOS	word			
+very	बहुत	ᱟᱰᱤ	GATITOS	word			
 very good		ᱟᱫᱤ ᱵᱦᱟᱜᱮ	GATITOS	word			
 vessel		ᱡᱚᱡᱚᱱᱟ	GATITOS	word			
 via		ᱚᱱᱟᱛᱮ	GATITOS	word			

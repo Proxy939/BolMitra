@@ -8,6 +8,8 @@ import kotlinx.coroutines.withContext
 import org.bolmitra.phrasebook.ClassroomPacks
 import org.bolmitra.phrasebook.DemoSeed
 import org.bolmitra.phrasebook.InMemoryPhrasebook
+import org.bolmitra.phrasebook.Phrase
+import org.bolmitra.phrasebook.WordComposer
 import org.bolmitra.phrasebook.SantaliGlossary
 import org.bolmitra.translate.AudioClip
 import org.bolmitra.translate.AudioPlayer
@@ -117,6 +119,30 @@ class LiveTurnEngine private constructor(
         DemoSeed.phrases.firstOrNull { it.audioRef == ref }?.targetTextNative
     }
 
+    /**
+     * Single-word index for [WordComposer], built once from the same rows T0 serves.
+     *
+     * Only single-word keys go in. A multi-word row cannot answer a single-word lookup, and
+     * including it would let `किताब खोलो` be offered as the rendering of the word `किताब`.
+     *
+     * Precedence matches the phrasebook's: `putIfAbsent` in the same source order, so a reviewed row
+     * wins over a corpus row and a corpus row over a supplied one for the same word.
+     */
+    private val singleWordIndex: Map<String, Phrase> by lazy {
+        val out = LinkedHashMap<String, Phrase>(1024)
+        val all = DemoSeed.phrasesFor(language) +
+            SantaliGlossary.phrasesFor(context, language) +
+            ClassroomPacks.phrasesFor(context, language)
+        for (p in all) {
+            val key = p.hiNormalized
+            if (key.isBlank() || key.contains(' ')) continue
+            if (p.targetTextNative.isBlank() || p.targetTextDeva.isBlank()) continue
+            out.putIfAbsent(key, p)
+        }
+        Log.i(TAG, "word index: ${out.size} single-word Hindi keys for ${language.englishName}")
+        out
+    }
+
     @Volatile
     var loadState: LoadState? = null
         private set
@@ -183,6 +209,13 @@ class LiveTurnEngine private constructor(
                 tts = t,
                 player = p,
                 mt = m,
+                // Word-by-word composition from the same rows T0 serves, tried before the model.
+                // Null when there is nothing to compose from, so Mundari and Ho are unaffected.
+                composeWords = if (singleWordIndex.isEmpty()) {
+                    null
+                } else {
+                    { hindi -> WordComposer.compose(hindi) { w -> singleWordIndex[w] } }
+                },
                 nowMs = SystemClock::elapsedRealtime,
             )
             LoadState.Ready

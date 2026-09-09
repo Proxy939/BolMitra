@@ -67,11 +67,39 @@ def norm_hi(s):
     return " ".join(t for t in s.split() if t and t not in FOLDED).lower()
 
 
+def unescape_markdown(s):
+    r"""Removes the backslash escapes the source markdown carries.
+
+    The supplied file is markdown, so `!` is written `\!` and `_` is written `\_`. Eleven Santali
+    cells shipped with those backslashes still in them - `ᱟᱹᱰᱤ ᱱᱟᱯᱟᱭ\!` and
+    `ᱟᱢᱟᱜ ᱚᱲᱟᱜ ᱠᱟᱹᱢᱤ ᱫᱚ \_\_\_ ᱠᱟᱱᱟ᱾` - which is text a voice would try to read.
+    """
+    return re.sub(r"\\([!_*()\[\]\-.#+])", r"\1", s)
+
+
 def hindi_variants(cell):
     for part in cell.split("/"):
-        cleaned = unicodedata.normalize("NFC", part).strip().strip(DANDA).strip()
+        cleaned = unicodedata.normalize("NFC", unescape_markdown(part)).strip()
+        cleaned = cleaned.strip(DANDA).strip()
         if cleaned:
             yield cleaned
+
+
+def santali_primary(cell):
+    """The form a class hears, plus any alternatives the source offered.
+
+    Nineteen Santali cells hold two translations separated by `/` - `ᱡᱚᱦᱟᱨ / ᱡᱚᱦᱟᱨ ᱜᱮ᱾` for
+    नमस्ते, `ᱦᱮᱸ / ᱦᱮᱸ ᱜᱮ᱾` for हाँ. Shipped whole, the voice reads the slash and both variants
+    aloud. Splitting the Hindi on `/` but not the Santali was the original oversight.
+
+    The first form wins, which follows the glossary's own convention: it keeps disagreeing forms in a
+    `variants` column and never merges them into what is spoken.
+    """
+    cleaned = unicodedata.normalize("NFC", unescape_markdown(cell)).strip()
+    parts = [p.strip() for p in cleaned.split("/") if p.strip()]
+    if not parts:
+        return "", []
+    return parts[0], parts[1:]
 
 
 def parse(path):
@@ -94,7 +122,11 @@ def parse(path):
 
 
 def gate(english, hindi, santali):
-    """Returns a rejection reason, or None if the row may ship."""
+    """Returns a rejection reason, or None if the row may ship.
+
+    Runs on the *cleaned* Santali — after unescaping and after taking the primary form — so it is
+    checking what would actually be spoken rather than what the markdown happened to contain.
+    """
     if not santali or not hindi:
         return "blank cell"
     if not any(OL_LO <= ord(c) <= OL_HI for c in santali):
@@ -103,6 +135,14 @@ def gate(english, hindi, santali):
         return "Latin letters in the Santali (generation artifact)"
     if "(" in santali or ")" in santali:
         return "bracketed editorial note the voice would read aloud"
+    # These three are backstops: unescape and santali_primary should have removed them, so anything
+    # reaching here means the cleaning missed a form and the row must not ship silently.
+    if "\\" in santali:
+        return "leftover markdown escape"
+    if "/" in santali:
+        return "leftover alternative form separator"
+    if re.search(r"[0-9\u0966-\u096F]", santali):
+        return "digits in the Santali"
     for word in santali.split():
         if word and unicodedata.combining(word[0]):
             return "a word begins with a combining mark"
@@ -138,13 +178,16 @@ def main():
     kept = []                      # (hindi_key, santali, english, pack)
     seen = {}                      # normalised hindi -> (santali, english)
 
-    for pack, english, hindi_cell, santali in rows:
+    for pack, english, hindi_cell, raw_santali in rows:
+        # Clean BEFORE gating, so the gate judges the string that would be spoken.
+        santali, alternatives = santali_primary(raw_santali)
+        if alternatives:
+            stats["alternative Santali forms dropped (first kept)"] += len(alternatives)
         reason = gate(english, hindi_cell, santali)
         if reason:
             stats[reason] += 1
-            rejected.append((english, hindi_cell, santali, reason))
+            rejected.append((english, hindi_cell, raw_santali, reason))
             continue
-        santali = unicodedata.normalize("NFC", santali).strip()
         for hindi in hindi_variants(hindi_cell):
             key = norm_hi(hindi)
             if not key:

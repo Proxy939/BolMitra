@@ -4,6 +4,7 @@ import org.bolmitra.phrasebook.HindiNormalizer
 import org.bolmitra.phrasebook.LookupResult
 import org.bolmitra.phrasebook.Phrase
 import org.bolmitra.phrasebook.Provenance
+import org.bolmitra.phrasebook.WordComposer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,6 +20,16 @@ import org.junit.Test
  * a timing race.
  */
 class TurnOrchestratorTest {
+
+    /**
+     * A realistic T1 target string: ᱫᱟᱜ (*dag*, water).
+     *
+     * The fixtures here were ASCII placeholders like `"unr-text"`, and three tests began failing the
+     * moment model output started being validated — correctly, because for Santali the engine emits
+     * Ol Chiki and a placeholder was never a faithful stand-in. Using real Ol Chiki means these tests
+     * exercise the path a device does.
+     */
+    private val OL_CHIKI_OUTPUT = "\u1C6B\u1C5F\u1C5C"
 
     // --- fakes ---------------------------------------------------------------------------
 
@@ -209,7 +220,7 @@ class TurnOrchestratorTest {
 
     @Test
     fun `T0 miss with MT engine produces MACHINE audio`() {
-        val mt = FakeMt(MtOutput("unr-text", "deva-text"))
+        val mt = FakeMt(MtOutput(OL_CHIKI_OUTPUT, "deva-text"))
         val out = orchestrator(FakePhrasebook(null), mt = mt).handle("नया वाक्य", turnStartMs = 0)
         assertTrue(out is TurnOutcome.MachineAudio)
         assertEquals(Provenance.MACHINE, out.provenance)
@@ -219,7 +230,7 @@ class TurnOrchestratorTest {
     fun `neural path is NOT entered when the budget cannot cover it`() {
         // 2.5 s already spent. Path B needs 1200 ms pessimistically, so 2500 + 1200 > 3000.
         clock = 2_500
-        val mt = FakeMt(MtOutput("unr", "deva"))
+        val mt = FakeMt(MtOutput(OL_CHIKI_OUTPUT, "deva"))
         val out = orchestrator(FakePhrasebook(null), mt = mt).handle("नया वाक्य", turnStartMs = 0)
 
         assertTrue(out is TurnOutcome.Unavailable)
@@ -231,7 +242,7 @@ class TurnOrchestratorTest {
         // Budget allows starting Path B, but MT itself burns the remaining time. The second
         // check must fire — this is the case a naive implementation gets wrong.
         clock = 1_700
-        val mt = FakeMt(MtOutput("unr", "deva-text"), clock = { clock = 2_600 })
+        val mt = FakeMt(MtOutput(OL_CHIKI_OUTPUT, "deva-text"), clock = { clock = 2_600 })
         val out = orchestrator(FakePhrasebook(null), mt = mt).handle("नया वाक्य", turnStartMs = 0)
 
         assertTrue(out is TurnOutcome.TextOnly)
@@ -242,7 +253,7 @@ class TurnOrchestratorTest {
 
     @Test
     fun `synthesis failure degrades to text with the translated Devanagari`() {
-        val mt = FakeMt(MtOutput("unr", "deva-text"))
+        val mt = FakeMt(MtOutput(OL_CHIKI_OUTPUT, "deva-text"))
         val out = orchestrator(FakePhrasebook(null), mt = mt, tts = FakeTts(null))
             .handle("नया वाक्य", turnStartMs = 0)
 
@@ -281,5 +292,177 @@ class TurnOrchestratorTest {
         )
         val out = orchestrator(book).handle("किताब खोलो", turnStartMs = 0)
         assertTrue(out is TurnOutcome.VerifiedAudio)
+    }
+}
+
+/**
+ * Checks on the two rungs added because `नमस्ते बच्चों` came back as broken model output.
+ *
+ * Both failures were real and neither was visible in a build: the model's string went to the screen
+ * unchecked, and a sentence one word longer than a phrasebook entry skipped the corpus entirely even
+ * when every one of its words was in there.
+ */
+class ComposedAndValidatedTest {
+
+    private val dag = "\u1C6B\u1C5F\u1C5C"          // ᱫᱟᱜ  water
+    private val johar = "\u1C61\u1C5A\u1C66\u1C5F\u1C68"  // ᱡᱚᱦᱟᱨ  hello
+
+    private fun phrase(hi: String, native: String, deva: String = "क") = Phrase(
+        id = 1, lakshyaCode = null, hiText = hi,
+        hiNormalized = HindiNormalizer.normalize(hi),
+        targetTextNative = native, targetTextDeva = deva, audioRef = null,
+        verifiedBy = null, packVersion = "t", src = "GATITOS", srcEn = hi,
+        provenance = Provenance.CORPUS,
+    )
+
+    private class Book(private val hit: LookupResult?) : PhrasebookEngine {
+        override fun lookup(rawHindi: String): LookupResult? = hit
+    }
+
+    private class Tts(private val clip: AudioClip?) : TtsEngine {
+        var lastText: String? = null
+        override fun synthesizeUtterance(text: String): AudioClip? {
+            lastText = text
+            return clip
+        }
+    }
+
+    private class Player(private val ok: Boolean = true) : AudioPlayer {
+        override fun play(ref: String) = ok
+        override fun play(clip: AudioClip) = ok
+    }
+
+    private class Mt(private val out: MtOutput?) : MtEngine {
+        var calls = 0
+        override fun translate(normalizedHindi: String): MtOutput? {
+            calls++
+            return out
+        }
+    }
+
+    // --- model output validation -------------------------------------------------------------
+
+    @Test
+    fun `model output with no Ol Chiki never reaches a screen`() {
+        // The reported symptom. A greedy int8 model on a low-resource pair can emit strings with no
+        // Ol Chiki at all, and the class was shown them — boxes that cannot be told apart from a
+        // font problem.
+        listOf("XXXX", "till done", "???", "unr-text", "   ").forEach { junk ->
+            val out = TurnOrchestrator(
+                phrasebook = Book(null),
+                tts = Tts(AudioClip(ShortArray(8))),
+                player = Player(),
+                mt = Mt(MtOutput(junk, "deva")),
+                nowMs = { 0 },
+            ).handle("नया वाक्य", turnStartMs = 0)
+            assertTrue(
+                "junk model output '$junk' produced $out instead of being refused",
+                out is TurnOutcome.Unavailable,
+            )
+        }
+    }
+
+    @Test
+    fun `well-formed model output still gets through`() {
+        // The check must not be so strict that it blocks the tier entirely.
+        val out = TurnOrchestrator(
+            phrasebook = Book(null),
+            tts = Tts(AudioClip(ShortArray(8))),
+            player = Player(),
+            mt = Mt(MtOutput(dag, "deva")),
+            nowMs = { 0 },
+        ).handle("नया वाक्य", turnStartMs = 0)
+        assertTrue(out is TurnOutcome.MachineAudio)
+    }
+
+    // --- word composition ---------------------------------------------------------------------
+
+    @Test
+    fun `a sentence whose words are all in the corpus never reaches the model`() {
+        // `नमस्ते बच्चों` is the reported case: `नमस्ते` was a clean corpus hit and the two-word
+        // sentence went to the model anyway.
+        val index = mapOf(
+            HindiNormalizer.normalize("नमस्ते") to phrase("नमस्ते", johar),
+            HindiNormalizer.normalize("बच्चा") to phrase("बच्चा", dag),
+        )
+        val mt = Mt(MtOutput(dag, "deva"))
+        val out = TurnOrchestrator(
+            phrasebook = Book(null),
+            tts = Tts(AudioClip(ShortArray(8))),
+            player = Player(),
+            mt = mt,
+            composeWords = { hi -> WordComposer.compose(hi) { w -> index[w] } },
+            nowMs = { 0 },
+        ).handle("नमस्ते बच्चों", turnStartMs = 0)
+
+        assertTrue("expected a composed outcome, got $out", out is TurnOutcome.ComposedAudio)
+        val composed = out as TurnOutcome.ComposedAudio
+        assertEquals("the model must not be consulted when the corpus can answer", 0, mt.calls)
+        assertEquals(Provenance.APPROXIMATE, composed.provenance)
+        assertTrue("both words should be present", composed.targetText.contains(johar))
+        assertEquals(1.0f, composed.coverage, 1e-6f)
+        assertTrue(composed.missing.isEmpty())
+        assertTrue("the corpus must be named", composed.sources.contains("GATITOS"))
+    }
+
+    @Test
+    fun `composition is skipped when too little of the sentence resolves`() {
+        val index = mapOf(HindiNormalizer.normalize("नमस्ते") to phrase("नमस्ते", johar))
+        val mt = Mt(MtOutput(dag, "deva"))
+        val out = TurnOrchestrator(
+            phrasebook = Book(null),
+            tts = Tts(AudioClip(ShortArray(8))),
+            player = Player(),
+            mt = mt,
+            composeWords = { hi -> WordComposer.compose(hi) { w -> index[w] } },
+            nowMs = { 0 },
+        ).handle("नमस्ते परसों गाँव चलेंगे साथ", turnStartMs = 0)
+
+        // One word of five is a word list, not a rendering. The model gets its turn instead.
+        assertTrue("expected fall-through to the model, got $out", out is TurnOutcome.MachineAudio)
+        assertEquals(1, mt.calls)
+    }
+
+    @Test
+    fun `the voice is given the Devanagari, never the Ol Chiki`() {
+        // DevanagariToOdia has no mapping for a single Ol Chiki character, so handing it the native
+        // form would drop the whole utterance and synthesise silence.
+        val index = mapOf(
+            HindiNormalizer.normalize("नमस्ते") to phrase("नमस्ते", johar, deva = "जोहार"),
+            HindiNormalizer.normalize("बच्चा") to phrase("बच्चा", dag, deva = "गिदरा"),
+        )
+        val tts = Tts(AudioClip(ShortArray(8)))
+        TurnOrchestrator(
+            phrasebook = Book(null),
+            tts = tts,
+            player = Player(),
+            composeWords = { hi -> WordComposer.compose(hi) { w -> index[w] } },
+            nowMs = { 0 },
+        ).handle("नमस्ते बच्चों", turnStartMs = 0)
+
+        val spoken = tts.lastText!!
+        assertTrue("the voice was handed Ol Chiki: $spoken", spoken.none { it.code in 0x1C50..0x1C7F })
+        assertTrue("expected Devanagari, got $spoken", spoken.any { it.code in 0x0900..0x097F })
+    }
+
+    @Test
+    fun `the composer passes its own self-check`() {
+        assertEquals(emptyList<String>(), WordComposer.validate())
+    }
+
+    @Test
+    fun `an inflected word resolves to its base form`() {
+        // बच्चों -> बच्चा is the specific miss that sent the reported sentence to the model.
+        val index = mapOf(HindiNormalizer.normalize("बच्चा") to phrase("बच्चा", dag))
+        val c = WordComposer.compose("बच्चों") { w -> index[w] }
+        assertTrue("बच्चों did not resolve", c != null && c.resolvedCount == 1)
+        assertTrue("should be flagged as a stem match", c!!.words.any { it.viaStem })
+    }
+
+    @Test
+    fun `a short word is not stemmed into an unrelated match`() {
+        // को must not become क and match something. MIN_STEM_LENGTH guards this.
+        val index = mapOf(HindiNormalizer.normalize("क") to phrase("क", dag))
+        assertEquals(null, WordComposer.compose("को") { w -> index[w] })
     }
 }

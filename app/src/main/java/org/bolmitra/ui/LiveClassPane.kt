@@ -78,7 +78,6 @@ import org.bolmitra.phrasebook.InMemoryPhrasebook
 import org.bolmitra.speech.AudioCapture
 import org.bolmitra.speech.LiveTurnEngine
 import org.bolmitra.speech.TargetLanguage
-import org.bolmitra.speech.UtteranceSegmenter
 import org.bolmitra.speech.WavFile
 import org.bolmitra.speech.WavPlayer
 import org.bolmitra.ui.theme.BolmitraColors
@@ -87,66 +86,41 @@ import org.bolmitra.ui.common.OlChikiFont
 import org.bolmitra.ui.common.SoundwaveVisualizer
 
 /**
- * Mic session tuning. The mic is a TOGGLE — one tap opens it, the next closes it — and inside a
- * session each pause in speech ends one utterance and starts one translation.
- *
- * The old behaviour was a single fixed 4 s window per tap, which cut teachers off mid-sentence and
- * allowed exactly one translation per tap.
- *
- * `ponytail:` These are an energy gate, not a voice activity detector. Ceiling: a room with
- * continuous chatter *above* the adaptive floor never falls silent, so utterances end at
- * [MAX_UTTERANCE_MS] instead of at the teacher's pause — longer segments, still correct, just less
- * responsive. Upgrade path: the Silero VAD already staged at `ModelStore.vadModel`, which
- * `ModelStore.hasVad()` can already report on and which nothing loads yet.
- */
-private const val SILENCE_HOLD_MS = 800L
-
-/**
- * Forced cut when no pause arrives. Bounds one utterance's buffer at ~224 KB.
- *
- * Sized against [MAX_SESSION_MS] rather than chosen in isolation. Measured on the tablet, a
- * classroom's ambient level can sit above the gate continuously, so silence never registers and
- * *every* cut is this limit. At 15 s — the value this started at — a 15 s session would produce
- * exactly one translation, arriving as the mic closed. At 7 s the same room gives two, and 7 s is
- * still longer than any single classroom instruction, so a teacher who pauses normally is cut by
- * silence long before reaching it.
- */
-private const val MAX_UTTERANCE_MS = 7_000L
-
-/**
  * The mic closes itself after this long, even untouched.
  *
- * A backstop as well as a limit: an open mic left running is the one state that keeps transcribing a
- * room full of children, so a tablet put down mid-lesson must not do that indefinitely.
+ * One tap opens the mic, and it records until the teacher taps again or this deadline arrives —
+ * whichever comes first. **A pause in speech is not an ending.** That is the whole of the rule now,
+ * and it replaces an energy gate that inferred sentence boundaries from signal level.
  *
- * Enforced as a **deadline the in-flight utterance also respects**, not just a check between
- * utterances. Bounding only the loop head would let an utterance that began at 14 s run to 22 s,
- * which is not what "closes after 15 seconds" means.
+ * The gate (`UtteranceSegmenter`, deleted) cut ~800 ms after the level dropped and translated each
+ * fragment. In a classroom it cut teachers off mid-sentence: a pause for breath and the end of a
+ * sentence are the same signal at different durations, and no threshold separates them for someone
+ * thinking while they speak. Lengthening the hold moves the cut rather than preventing it. Re-adding
+ * it is roughly 60 lines plus a call site, and git has the original — but do not, unless the failure
+ * it caused has an answer.
+ *
+ * This is also a backstop, not only a limit: an open mic left running keeps transcribing a room full
+ * of children, so a tablet put down mid-lesson must not do that indefinitely. Fifteen seconds at
+ * 16 kHz mono PCM16 is 480 KB, which `AudioCapture`'s chunk list holds without a cap.
  */
 private const val MAX_SESSION_MS = 15_000L
 
-/**
- * Leading audio used to measure the room rather than the teacher.
- *
- * A fixed dB threshold is the classic way to get this wrong: it works in a quiet office and fails
- * in a classroom with a fan. Averaging the first few reads and gating relative to that adapts to
- * the room the tablet is actually in.
- */
-private const val NOISE_CALIBRATION_MS = 400L
-
-/** Speech must exceed the measured noise floor by this factor. */
-private const val SPEECH_OVER_NOISE = 2.5f
-
-/**
- * Absolute floor, so a silent room cannot make the gate arbitrarily sensitive.
- *
- * With a near-zero measured floor, `floor * 2.5` is also near zero and every sample counts as
- * speech, which would end an utterance only at [MAX_UTTERANCE_MS].
- */
-private const val MIN_SPEECH_RMS = 0.012f
-
 /** Consecutive failed reads before a session gives up rather than spinning on a dead mic. */
 private const val MAX_DEAD_READS = 40
+
+/**
+ * The complete rule for when recording continues. Two ways to stop, and no third.
+ *
+ * Extracted as a pure function because this is precisely what the bug was about: an energy gate
+ * added a third exit that fired on a pause, and nothing in a build or a screenshot showed it. A
+ * predicate can be asserted; a condition buried in a blocking mic loop cannot be, because testing it
+ * would need `AudioRecord` and a device.
+ *
+ * Anything that wants to end a recording must go through [stopRequested] or move the deadline. Adding
+ * a parameter here should feel like the deliberate act it is.
+ */
+internal fun shouldKeepRecording(stopRequested: Boolean, nowMs: Long, deadlineMs: Long): Boolean =
+    !stopRequested && nowMs < deadlineMs
 
 /** `mm:ss` for the session readout. Minutes are not clamped to two digits; the cap is 30. */
 internal fun formatMmSs(ms: Long): String {
@@ -241,24 +215,49 @@ fun LiveClassPane(
         recordingRows = recorder.recordings(language)
     }
 
-    // Drives the mm:ss readout. Keyed on sessionActive so it does not tick when the mic is closed;
-    // it is a display concern only and never a source of truth for when the session ends.
-    LaunchedEffect(sessionActive) {
-        if (!sessionActive) {
-            sessionElapsedMs = 0L
-            return@LaunchedEffect
-        }
+    // Drives the mm:ss readout. A display concern only, never a source of truth for when recording
+    // ends.
+    //
+    // Keyed on LISTENING rather than sessionActive, which was the reported bug: sessionActive stays
+    // true through translation and playback, so the clock kept climbing towards 15 s while the mic
+    // was already shut and the class was hearing the answer. A timer that runs when nothing is being
+    // recorded is a screen stating something untrue.
+    //
+    // Leaving LISTENING freezes the number where it stopped instead of zeroing it, so a teacher can
+    // see how long the recording they just made actually was. `toggleMic` resets it on the next tap.
+    // The 200 ms tick is finer than the old 500 ms because the number is now something a teacher may
+    // be watching in order to decide when to tap stop.
+    LaunchedEffect(phase) {
+        if (phase != TurnPhase.LISTENING) return@LaunchedEffect
         val start = SystemClock.elapsedRealtime()
         while (true) {
             sessionElapsedMs = SystemClock.elapsedRealtime() - start
-            delay(500)
+            delay(200)
         }
     }
 
     val canSpeak = micGranted && loadState is LiveTurnEngine.LoadState.Ready
 
     /**
-     * Captures one utterance and returns it, ending at the teacher's pause.
+     * Records everything the teacher says in one session, and stops for exactly two reasons.
+     *
+     * ### A pause no longer ends the recording, and that is the point
+     *
+     * This used to run an energy gate ([UtteranceSegmenter], now deleted) that ended the recording
+     * ~800 ms after the signal dropped, translating each sentence as it was finished. It read well on
+     * paper and was wrong in a classroom: a teacher drawing breath mid-sentence was cut off, the
+     * translation began over the top of them, and the on-screen timer carried on to 15 s as though
+     * still listening — so the one visible cue disagreed with what the mic was doing.
+     *
+     * The trouble is that "a pause" and "the end of a sentence" are the same signal at different
+     * durations, and no threshold separates them reliably for a person who is thinking while they
+     * speak. Tuning the hold longer only moves the cut; it does not stop it happening mid-thought.
+     * So the decision is handed back to the person who knows: recording ends when the **teacher taps
+     * stop**, or at [MAX_SESSION_MS] as a backstop, and nothing in between.
+     *
+     * One session is now one utterance and one translation, which also removes the mid-session
+     * interleaving of speech and playback — the mic is closed for the whole of the turn, so the
+     * tablet cannot hear its own voice.
      *
      * Runs on [Dispatchers.Default]; `AudioRecord.read` blocks for ~128 ms per call, which is what
      * paces this loop rather than a `delay`. That blocking read is also why cancellation is checked
@@ -268,36 +267,35 @@ fun LiveClassPane(
      * Returns null when nothing usable was heard — [AudioCapture.stop]'s 100 ms floor — which is the
      * normal result when the teacher stops the session without saying anything.
      */
-    suspend fun captureUtterance(
+    suspend fun captureSession(
         capture: AudioCapture,
         stopRequested: AtomicBoolean,
         /**
-         * Absolute clock at which the session ends. Cutting here rather than only between utterances
-         * is what makes [MAX_SESSION_MS] a real bound: whatever has been said so far is still
+         * Absolute clock at which the mic closes itself. Whatever has been said so far is still
          * returned and still translated, so the cap costs the teacher nothing they already said.
          */
         sessionDeadlineMs: Long,
     ): ShortArray? {
-        val segmenter = UtteranceSegmenter(
-            calibrationMs = NOISE_CALIBRATION_MS,
-            speechOverNoise = SPEECH_OVER_NOISE,
-            minSpeechRms = MIN_SPEECH_RMS,
-            silenceHoldMs = SILENCE_HOLD_MS,
-            maxUtteranceMs = MAX_UTTERANCE_MS,
-        )
         capture.start()
-        val started = SystemClock.elapsedRealtime()
         var deadReads = 0
 
         while (true) {
             // Cooperative cancellation. Without this the loop is unbounded, and a cancelled scope
             // (navigating away, rotation) would leave AudioRecord holding the mic for the life of
-            // the process. The old fixed window hid this by always terminating on its own.
-            // `AudioRecord.read` blocks and cannot be interrupted, so the worst case for noticing a
-            // cancellation is one read, ~128 ms.
+            // the process. `AudioRecord.read` blocks and cannot be interrupted, so the worst case
+            // for noticing a cancellation is one read, ~128 ms.
             currentCoroutineContext().ensureActive()
-            if (stopRequested.get()) break
-            if (SystemClock.elapsedRealtime() >= sessionDeadlineMs) break
+
+            // The only two ways recording ends. A pause is deliberately not one of them — see the
+            // note on this function, and `shouldKeepRecording`, which is where the rule lives.
+            if (!shouldKeepRecording(
+                    stopRequested = stopRequested.get(),
+                    nowMs = SystemClock.elapsedRealtime(),
+                    deadlineMs = sessionDeadlineMs,
+                )
+            ) {
+                break
+            }
 
             if (capture.drain() == 0) {
                 // A dead mic returns immediately instead of blocking, which would spin this loop.
@@ -305,11 +303,6 @@ fun LiveClassPane(
                 continue
             }
             deadReads = 0
-
-            val elapsed = SystemClock.elapsedRealtime() - started
-            if (segmenter.feed(capture.lastChunkRms, elapsed) != UtteranceSegmenter.Decision.CONTINUE) {
-                break
-            }
         }
         return capture.stop()
     }
@@ -333,38 +326,42 @@ fun LiveClassPane(
         stopRequested.set(false)
         error = null
         result = null
+        // Reset here rather than when the session ends, so the previous recording's length stays on
+        // screen until a new one starts.
+        sessionElapsedMs = 0L
         sessionActive = true
 
         scope.launch {
             val capture = AudioCapture()
             val sessionDeadline = SystemClock.elapsedRealtime() + MAX_SESSION_MS
             try {
-                while (isActive && !stopRequested.get()) {
-                    if (SystemClock.elapsedRealtime() >= sessionDeadline) break
+                // One recording per tap, not a loop over utterances.
+                //
+                // This was a `while` that captured, translated, then went back for more until the
+                // teacher tapped stop, and that structure is what made a pause cut them off: every
+                // pass ended at the energy gate. With the gate gone there is exactly one recording,
+                // bounded by the tap or by MAX_SESSION_MS, and exactly one translation after it.
+                phase = TurnPhase.LISTENING
+                val pcm = withContext(Dispatchers.Default) {
+                    captureSession(capture, stopRequested, sessionDeadline)
+                }
 
-                    phase = TurnPhase.LISTENING
-                    val pcm = withContext(Dispatchers.Default) {
-                        captureUtterance(capture, stopRequested, sessionDeadline)
+                if (pcm == null) {
+                    // Under the 100 ms floor. Tapping stop straight away is a legitimate way to
+                    // cancel, so that case stays silent; otherwise the mic delivered nothing usable
+                    // and the teacher needs to know why they are about to hear nothing.
+                    if (!stopRequested.get()) {
+                        error = "Nothing audible was captured. Hold the tablet closer and speak up."
                     }
-                    if (pcm == null) {
-                        // Under the 100 ms floor. If the teacher asked to stop this is simply the
-                        // end of the session; otherwise the mic is not delivering audio and looping
-                        // would spin start/stop forever.
-                        if (!stopRequested.get()) {
-                            error = "Nothing audible was captured. Hold the tablet closer and " +
-                                "speak up."
-                        }
-                        break
-                    }
-
+                } else {
                     // END OF SPEECH, not session start. The 3 s R3 deadline is measured from here,
-                    // and an open mic makes this load-bearing in a way the fixed window did not: a
-                    // timestamp taken when the teacher tapped would put every utterance after the
-                    // third second of the lesson straight into BUDGET_EXHAUSTED.
+                    // and one long recording makes that more load-bearing rather than less: a
+                    // timestamp taken when the teacher tapped would charge the entire listening
+                    // window against the budget and put every turn into BUDGET_EXHAUSTED.
                     val turnStart = SystemClock.elapsedRealtime()
 
                     phase = TurnPhase.THINKING
-                    // The mic is closed for the whole of this call, which is what keeps the tablet
+                    // The mic is already closed by captureSession, which is what keeps the tablet
                     // from hearing its own translation and translating it back. runTurn plays the
                     // audio synchronously, so returning from it means the room is quiet again.
                     val turn = engine.runTurn(pcm, turnStart)
@@ -1266,6 +1263,7 @@ private fun TurnOutcome.displayText(): String = when (this) {
     is TurnOutcome.CorpusAudio -> targetText
     is TurnOutcome.ApproximateAudio -> targetText
     is TurnOutcome.MachineAudio -> targetText
+    is TurnOutcome.ComposedAudio -> targetText
     is TurnOutcome.TextOnly -> devanagariText
     is TurnOutcome.Unavailable -> reason.explain()
 }
@@ -1301,6 +1299,7 @@ private fun TurnOutcome.hasReplayableAudio(): Boolean = when (this) {
     is TurnOutcome.CorpusAudio,
     is TurnOutcome.ApproximateAudio,
     is TurnOutcome.MachineAudio,
+    is TurnOutcome.ComposedAudio,
     -> true
 
     is TurnOutcome.TextOnly,
@@ -1322,6 +1321,7 @@ private fun AudioPlayer.replay(outcome: TurnOutcome): Boolean = when (outcome) {
     is TurnOutcome.CorpusAudio -> outcome.clip?.let { play(it) } ?: play(outcome.audioRef)
     is TurnOutcome.ApproximateAudio -> outcome.clip?.let { play(it) } ?: play(outcome.audioRef)
     is TurnOutcome.MachineAudio -> play(outcome.clip)
+    is TurnOutcome.ComposedAudio -> play(outcome.clip)
     is TurnOutcome.TextOnly, is TurnOutcome.Unavailable -> false
 }
 
