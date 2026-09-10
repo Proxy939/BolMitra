@@ -80,3 +80,10 @@ E:/research/
 *.hprof
 ui*.xml
 screencap*.png
+
+# Scratch extracts used to fact-check the deck against ARCHITECTURE.md and the corpus builders:
+# slide text pulled out of the .pptx, grep excerpts, and source-URL dumps. All regenerated on
+# demand from files that are themselves untracked, so none of it is reviewable as source.
+arch-check*.txt
+corpus-links*.txt
+ppt-extract.txt
