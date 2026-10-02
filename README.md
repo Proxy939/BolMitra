@@ -195,12 +195,12 @@ Models are **not** bundled in the APK. They are sideloaded to app-scoped externa
 
 | Phase | Goal | Status |
 |---|---|---|
-| **0 · Measure** | Latency + memory baseline on the procured tablet | 🔄 In progress |
+| **0 · Measure** | Latency + memory baseline on the procured tablet | ✅ Working and tested |
 | **1 · Voice Loop** | End-to-end Hindi → Mundari turn, phrasebook only | ✅ Live |
 | **2 · Worksheets** | NIPUN-aligned bilingual worksheets, flashcards, QR | ✅ Live |
 | **3 · Neural MT** | T1 IndicTrans2 + block-laptop prep station | ✅ Live (Santali) |
 | **4 · Scale** | Santali Ol Chiki + transliteration pipeline | ✅ Live |
-| **5 · Validate** | Native-speaker review, classroom pilot | 🔜 Planned |
+| **5 · Validate** | Native-speaker review, classroom pilot | ✅ Done and improving |
 
 ---
 
