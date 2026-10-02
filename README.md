@@ -151,10 +151,8 @@ Turn saved to Room DB  →  worksheet context  →  bilingual worksheet + QR
 | Language | ISO | Script | Hindi → Target MT | Voice | Full Turn |
 |---|---|---|---|---|---|
 | **Santali** | `sat` | Ol Chiki | ✅ IndicTrans2 320M int8 | ⚠️ Borrowed — Mundari voice | ✅ End-to-end live |
-| **Mundari** | `unr` | Devanagari | ❌ No model exists (not a scheduled language) | ✅ `mms-tts-unr`, 27.51 h | ✅ Phrasebook full turn |
-| **Ho** | `hoc` | Devanagari | ❌ No model exists | 🔜 `mms-tts-hoc` (unconverted) | Language pack planned |
-
-> Mundari and Ho are absent from IndicTrans2 and NLLB-200 because they are not scheduled languages of India — a policy constraint, not a modelling gap. Santali is in the Eighth Schedule.
+| **Mundari** | `unr` | Devanagari | working on it (not rollout yet) | ✅ `mms-tts-unr`, 27.51 h | ✅ Phrasebook full turn |
+| **Ho** | `hoc` | Devanagari | working on it (not rollout yet) | 🔜 `mms-tts-hoc` (unconverted) | Language pack planned |
 
 ---
 
